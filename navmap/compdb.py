@@ -32,12 +32,19 @@ class CompilationDB:
                 args = list(ent["arguments"])
             else:
                 args = shlex.split(ent.get("command", ""))
-            self._args[os.path.realpath(fpath)] = self._clean_args(args, fpath)
+            self._args[os.path.realpath(fpath)] = self._clean_args(args, fpath, directory)
             self._files.append(fpath)
 
-    @staticmethod
-    def _clean_args(args: list[str], src: str) -> list[str]:
-        """剥掉编译器名、-c/-o 与输入文件本身，得到可复用的解析参数。"""
+    #: 值是路径、需要按 compdb directory 绝对化的 flag（分开写法）
+    _PATH_FLAGS_SEP = ("-I", "-isystem", "-iquote", "-idirafter", "-include", "-imacros")
+    #: 同上，合并写法（-Ifoo）
+    _PATH_FLAGS_JOINED = ("-I", "-isystem", "-iquote", "-idirafter")
+
+    @classmethod
+    def _clean_args(cls, args: list[str], src: str, directory: str) -> list[str]:
+        """剥掉编译器名、-c/-o 与输入文件本身，并把相对路径参数按
+        compdb 条目的 directory 绝对化（libclang 解析时不保证 cwd）。"""
+        src_real = os.path.realpath(src)
         out: list[str] = []
         skip_next = False
         for i, a in enumerate(args):
@@ -53,10 +60,29 @@ class CompilationDB:
                 continue
             if a.startswith("-o") and len(a) > 2:
                 continue
-            # 输入文件本身（相对或绝对路径拼写都可能）
-            if a == src or (os.path.exists(a) and os.path.realpath(a) == os.path.realpath(src)):
+            # 输入文件本身（相对或绝对路径拼写都可能；相对路径相对 directory）
+            cand = a if os.path.isabs(a) else os.path.join(directory, a)
+            if not a.startswith("-") and os.path.realpath(cand) == src_real:
+                continue
+            # 路径类 flag 绝对化
+            if a in cls._PATH_FLAGS_SEP:
+                skip_next = False  # 下面手动消费下一个参数
+                # 此处不 skip_next：下一个参数可能本身是路径，需要改写而非丢弃
+                out.append(a)
+                continue
+            if i > 0 and args[i - 1] in cls._PATH_FLAGS_SEP and not os.path.isabs(a):
+                out.append(os.path.normpath(os.path.join(directory, a)))
+                continue
+            joined = next((f for f in cls._PATH_FLAGS_JOINED
+                           if a.startswith(f) and len(a) > len(f)), None)
+            if joined and not os.path.isabs(a[len(joined):]):
+                out.append(joined + os.path.normpath(
+                    os.path.join(directory, a[len(joined):])))
                 continue
             out.append(a)
+        # navmap 只解析不编译：-Werror(-Werror=*) 会把告警抬成 error，
+        # 触发 -ferror-limit 熔断成 fatal；尾部追加 -Wno-error 压制
+        out.append("-Wno-error")
         return out
 
     def lookup(self, file: str | Path) -> list[str] | None:
@@ -91,5 +117,8 @@ class CompilationDB:
             if pat.search(text):
                 args = self._args[os.path.realpath(src)]
                 hdr_dir = os.path.dirname(os.path.abspath(str(header)))
-                return args + ["-I", hdr_dir], src
+                # .h 默认按 C 头解析；借 C++ TU 参数时必须显式指定语言，
+                # 否则 -std=c++17 之类参数在 C 前端下直接判死（NULL TU）
+                lang = "c++-header" if src.endswith((".cc", ".cpp", ".cxx")) else "c-header"
+                return args + ["-I", hdr_dir, "-x", lang], src
         return None

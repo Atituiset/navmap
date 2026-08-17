@@ -57,7 +57,8 @@ def cmd_extract(args: argparse.Namespace) -> int:
     compdb = CompilationDB(args.compdb)
     from .extract.dispatch import DispatchExtractor
 
-    extractor = DispatchExtractor(compdb, src_root=args.src)
+    extractor = DispatchExtractor(compdb, src_root=args.src,
+                                  extra_args=cfg.get("extract", {}).get("extra_args"))
     tables, failures = extractor.extract_files([c.file for c in candidates])
 
     art = DispatchArtifact(

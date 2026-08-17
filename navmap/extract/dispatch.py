@@ -75,12 +75,14 @@ class DispatchExtractor:
         self,
         compdb: CompilationDB,
         src_root: str | Path,
+        extra_args: list[str] | None = None,
     ):
         import clang.cindex as cindex  # 需 clangenv.setup() 先行
 
         self._cindex = cindex
         self.compdb = compdb
         self.src_root = Path(src_root).resolve()
+        self._extra_args = list(extra_args or [])
         self._index = cindex.Index.create()
         self._text_cache: dict[str, bytes] = {}
         self._cond_cache: dict[str, dict[int, str]] = {}
@@ -114,6 +116,7 @@ class DispatchExtractor:
             args, tu_src = borrowed
             self.args_source[path] = tu_src
 
+        args = args + self._extra_args
         tu = self._index.parse(
             path,
             args=args,

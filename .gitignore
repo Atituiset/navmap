@@ -4,3 +4,4 @@ __pycache__/
 .pytest_cache/
 vendor/*.conda
 tests/fixtures/*/compile_commands.json
+.navmap/
