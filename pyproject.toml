@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "navmap"
+version = "0.1.0"
+description = "C/C++ 导航图提取器（libclang）：消息分发表 / 状态机表 / 全局变量读写清单"
+requires-python = ">=3.10"
+dependencies = [
+    # 官方 libclang Python 绑定（clang/bindings/python/clang/cindex.py 的打包件），
+    # 版本必须与生产 libclang 严格一致（生产 clangd 20.1.0 → clang==20.1.0）。
+    "clang==20.1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[project.scripts]
+navmap = "navmap.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["navmap*"]

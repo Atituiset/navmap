@@ -1,0 +1,3 @@
+/* X-Macro 消息定义：被 xmacro.c 以不同 X 定义多次包含 */
+X(MSG_1001, sess_handle_invite)
+X(MSG_1004, sess_handle_notify)

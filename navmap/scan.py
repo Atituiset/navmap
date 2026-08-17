@@ -1,0 +1,67 @@
+"""第 1 步：候选粗筛（设计文档 §5.1，正则 MVP 版）。
+
+只负责找候选文件，允许误报（第 2 步 AST 会过滤），漏报才要紧——
+词根名单先宽后收，在 config/navmap.toml 配置。
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from dataclasses import dataclass, field
+from pathlib import Path
+
+# 函数指针成员/typedef：`void (*handler)(...)`、`int (*cb)()` 等
+_FUNC_PTR_RE = re.compile(r"\(\s*\*\s*\w+\s*\)\s*\(")
+
+
+@dataclass
+class Candidate:
+    file: str
+    reasons: list[str] = field(default_factory=list)
+
+
+def _build_array_re(name_roots: list[str]) -> re.Pattern:
+    roots = "|".join(re.escape(r) for r in name_roots)
+    # `<type> <name>[] = {` 或 `[N] = {`，name 命中词根（大小写不敏感）
+    return re.compile(
+        r"\b\w*(?:" + roots + r")\w*\s*(?:\[[^\]]*\])+\s*=\s*\{",
+        re.IGNORECASE,
+    )
+
+
+def scan(
+    src_root: str | Path,
+    name_roots: list[str],
+    register_apis: list[str] | None = None,
+    extensions: list[str] | None = None,
+    exclude_dirs: tuple[str, ...] = (".git", "node_modules", ".venv", "vendor", "build"),
+) -> list[Candidate]:
+    """全仓文本粗筛，返回候选文件清单。"""
+    src_root = Path(src_root)
+    exts = tuple(extensions or [".c", ".h"])
+    array_re = _build_array_re(name_roots)
+    api_res = [(api, re.compile(r"\b" + re.escape(api) + r"\s*\(")) for api in (register_apis or [])]
+
+    candidates: dict[str, Candidate] = {}
+    for dirpath, dirnames, filenames in os.walk(src_root):
+        dirnames[:] = [d for d in dirnames if d not in exclude_dirs]
+        for fn in filenames:
+            if not fn.endswith(exts):
+                continue
+            path = Path(dirpath) / fn
+            try:
+                text = path.read_text(errors="replace")
+            except OSError:
+                continue
+            reasons: list[str] = []
+            if _FUNC_PTR_RE.search(text):
+                reasons.append("func-ptr-member")
+            if array_re.search(text):
+                reasons.append("array-init")
+            for api, pat in api_res:
+                if pat.search(text):
+                    reasons.append(f"register-api:{api}")
+            if reasons:
+                candidates[str(path)] = Candidate(file=str(path), reasons=reasons)
+    return sorted(candidates.values(), key=lambda c: c.file)

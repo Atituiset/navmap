@@ -1,0 +1,30 @@
+# navmap 配置：词根名单、注册 API 种子名单、子系统路径前缀映射
+# 词根先宽后收：误报无所谓（AST 会过滤），漏报才要紧。
+
+[libclang]
+# 生产环境 libclang.so 路径（clangd 20.1.0 对应的 libclang 20.1.0）。
+# 也可用环境变量 NAVMAP_LIBCLANG 覆盖；都不设时回落到 vendor/ 下自动探测。
+path = ""
+
+[scan]
+# 数组初始化器命名词根（大小写不敏感）
+name_roots = ["table", "disp", "map", "hdlr", "state", "trans"]
+# 注册式分发 API 种子名单（首版人工配 10~20 个，M3 启用）
+register_apis = ["RegisterHandler", "MsgReg", "RegisterMsgHandler", "MsgRegister"]
+extensions = [".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".hh", ".def", ".inc"]
+
+[dispatch]
+# 结构体中 handler 字段的命名（按函数指针类型识别，命名仅作 msg_id 排除依据）
+handler_fields = ["handler", "func", "fp", "pfn", "callback", "hdlr", "proc", "fn"]
+# msg_id 字段命名提示（第一个匹配的非 handler 标量字段）
+msgid_fields = ["msg_id", "msgid", "id", "msg", "event", "cmd", "code", "type", "msgno"]
+
+[statemachine]
+# 状态机表字段映射（M3 启用；各团队命名不同，按子系统配）
+state_fields = ["state", "cur_state", "from"]
+event_fields = ["event", "evt", "msg_id", "msg"]
+next_state_fields = ["next_state", "next", "to"]
+
+[subsystems]
+# 子系统名 → 路径前缀列表（产物按子系统分文件）
+default = [""]
