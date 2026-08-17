@@ -30,6 +30,40 @@ def _build_array_re(name_roots: list[str]) -> re.Pattern:
     )
 
 
+def build_matchers(
+    name_roots: list[str],
+    register_apis: list[str] | None = None,
+) -> tuple[re.Pattern, list[tuple[str, re.Pattern]]]:
+    """构造粗筛匹配器，供 scan() 与增量刷新单文件复判共用。"""
+    array_re = _build_array_re(name_roots)
+    api_res = [
+        (api, re.compile(r"\b" + re.escape(api) + r"\s*\("))
+        for api in (register_apis or [])
+    ]
+    return array_re, api_res
+
+
+def match_file(
+    path: str | Path,
+    array_re: re.Pattern,
+    api_res: list[tuple[str, re.Pattern]],
+) -> list[str]:
+    """单文件粗筛，返回命中原因（空列表 = 非候选）。"""
+    try:
+        text = Path(path).read_text(errors="replace")
+    except OSError:
+        return []
+    reasons: list[str] = []
+    if _FUNC_PTR_RE.search(text):
+        reasons.append("func-ptr-member")
+    if array_re.search(text):
+        reasons.append("array-init")
+    for api, pat in api_res:
+        if pat.search(text):
+            reasons.append(f"register-api:{api}")
+    return reasons
+
+
 def scan(
     src_root: str | Path,
     name_roots: list[str],
@@ -40,8 +74,7 @@ def scan(
     """全仓文本粗筛，返回候选文件清单。"""
     src_root = Path(src_root)
     exts = tuple(extensions or [".c", ".h"])
-    array_re = _build_array_re(name_roots)
-    api_res = [(api, re.compile(r"\b" + re.escape(api) + r"\s*\(")) for api in (register_apis or [])]
+    array_re, api_res = build_matchers(name_roots, register_apis)
 
     candidates: dict[str, Candidate] = {}
     for dirpath, dirnames, filenames in os.walk(src_root):
@@ -50,18 +83,7 @@ def scan(
             if not fn.endswith(exts):
                 continue
             path = Path(dirpath) / fn
-            try:
-                text = path.read_text(errors="replace")
-            except OSError:
-                continue
-            reasons: list[str] = []
-            if _FUNC_PTR_RE.search(text):
-                reasons.append("func-ptr-member")
-            if array_re.search(text):
-                reasons.append("array-init")
-            for api, pat in api_res:
-                if pat.search(text):
-                    reasons.append(f"register-api:{api}")
+            reasons = match_file(path, array_re, api_res)
             if reasons:
                 candidates[str(path)] = Candidate(file=str(path), reasons=reasons)
     return sorted(candidates.values(), key=lambda c: c.file)

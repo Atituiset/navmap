@@ -19,11 +19,24 @@ handler_fields = ["handler", "func", "fp", "pfn", "callback", "hdlr", "proc", "f
 # msg_id 字段命名提示（第一个匹配的非 handler 标量字段）
 msgid_fields = ["msg_id", "msgid", "id", "msg", "event", "cmd", "code", "type", "msgno"]
 
+[extract]
+# 追加给每次 libclang 解析的额外参数（toolchain 头路径逃生口，同 clangd
+# --query-driver 思路）。vendored conda libclang 无 resource dir 时例：
+# extra_args = ["-isystem", "/usr/lib/gcc/x86_64-linux-gnu/13/include"]
+
 [statemachine]
 # 状态机表字段映射（M3 启用；各团队命名不同，按子系统配）
 state_fields = ["state", "cur_state", "from"]
 event_fields = ["event", "evt", "msg_id", "msg"]
 next_state_fields = ["next_state", "next", "to"]
+
+[globalvar]
+# 关键全局变量名单（M4；手工维护，L2 文档里的关键全局量）
+variables = []
+
+[quality]
+# 消息枚举来源头文件（相对 --src），用于覆盖率检查（report --src 时生效）
+msgid_headers = []
 
 [subsystems]
 # 子系统名 → 路径前缀列表（产物按子系统分文件）

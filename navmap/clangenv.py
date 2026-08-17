@@ -19,6 +19,7 @@ from pathlib import Path
 EXPECTED_VERSION = "20.1.0"
 
 _configured = False
+_configured_path = ""
 
 
 class _CXStringRaw(ctypes.Structure):
@@ -40,12 +41,12 @@ def _vendor_candidates() -> list[str]:
 
 def setup(libclang_path: str | None = None) -> str:
     """定位并加载 libclang，返回实际使用的库路径。进程内幂等。"""
-    global _configured
+    global _configured, _configured_path
     import clang.cindex as cindex
 
     if _configured or cindex.Config.loaded:
         _configured = True
-        return cindex.Config.library_path or ""
+        return _configured_path
 
     candidates: list[str] = []
     if libclang_path:
@@ -65,6 +66,7 @@ def setup(libclang_path: str | None = None) -> str:
                 )
             cindex.Config.set_library_file(path)
             _configured = True
+            _configured_path = path
             return path
 
     raise RuntimeError(

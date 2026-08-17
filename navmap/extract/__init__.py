@@ -1,1 +1,1 @@
-"""提取器包。M1 实现 dispatch；registry/statemachine/globalvar 为 M3+。"""
+"""提取器包：base（公共 TU 解析层）+ dispatch / registry / statemachine / globalvar。"""

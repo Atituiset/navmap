@@ -204,7 +204,15 @@ navmap report --out .navmap/out/ > navmap-quality.md
 | M4 全局变量 | globalvar.py + 布局图 | 关键全局量读写清单人工评审 |
 | M5 nightly 增量 | incr.py + CI 集成 + clangd 索引联动校验 | nightly 时长 <30min |
 
-**进度（2026-08-17）**：M1 已完成——scan + dispatch + render + fixture 单测（14 项）全绿；五种表形态（普通宏表/乱序指定初始化/X-Macro/#ifdef 表项/cast 与 & 形式 handler）及头文件借参路径均已覆盖。已知偏离：`msg_id_value` 展开值恒为 null（官方 cindex.py 未打包 `clang_Cursor_Evaluate` 绑定，M2 用 ctypes 直调补）。
+**进度（2026-08-17）**：M1~M5 主体已落地——
+
+- **M1/M2**：scan + dispatch + render + fixture 单测全绿；五种表形态及头文件借参覆盖；`msg_id_value` 展开值已由 `clangeval.py`（ctypes 直调 `clang_Cursor_Evaluate`，白名单 kind 防 INIT_LIST_EXPR segfault）补上；quality.py 三指标（覆盖率/一致性/孤儿 handler，ERROR/WARN/INFO 分级）接入 `report`。
+- **M3**：registry.py（注册 API 名单内调用点 → 虚拟表 `registry:<Api>` 合入 dispatch 产物）+ statemachine.py（字段映射配置化，四元组，命中表自动从 dispatch 产物剔除）。
+- **M4**：globalvar.py（引用分类 assign/compound/incdec/addr/read，写者全量 + 读者按模块聚合 + 布局），父链分类经自顶向下祖先链实现（libclang 表达式 cursor 的 semantic_parent 为空）。
+- **M5**：incr.py（`navmap refresh`，git diff 受影响集合五条规则，多产物 merge，globalvar 按 ref_files 失效整体重算）+ CI 集成文档（`docs/ci-integration.md`；clangd 索引联动校验留作后续）。
+- **真实仓实测修正**：compdb 相对路径按 directory 绝对化、借参头文件补 `-x`、统一 `-Wno-error`、`[extract] extra_args` 逃生口。u-boot（176 万行 C）19 表 131 表项抽查全对；srsRAN（100 万行 C++）25 干净解析 0 表（现代 C++ 为注册式，待生产环境配 register_apis 验证）。
+
+已知遗留：注册 API 自动扩展名单、globalvar 引用 Top-N 自动候选、clangd 索引一致性校验（§7 有索引后开启）。
 
 M1 前可用现成开源 C 项目（如含消息表的协议栈实现）做 fixture 先行开发，不等 M0。
 
