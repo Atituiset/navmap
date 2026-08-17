@@ -186,6 +186,52 @@ def cmd_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_suggest_apis(args: argparse.Namespace) -> int:
+    """注册 API 候选发现（设计文档 §5.3-1 半自动部分）。"""
+    cfg = _load_config(args.config)
+    from .suggest import suggest_register_apis
+
+    clangenv.setup((cfg.get("libclang") or {}).get("path") or None)
+    known = cfg.get("scan", {}).get("register_apis", [])
+    sug, failures = suggest_register_apis(
+        args.src, args.compdb,
+        threshold=args.threshold,
+        extensions=cfg.get("scan", {}).get("extensions"),
+        extra_args=cfg.get("extract", {}).get("extra_args"),
+        known_apis=known,
+    )
+    print("# 注册 API 候选（人审后拷入 [scan] register_apis）")
+    print()
+    print("| API | 不同 handler 数 | 调用点数 | 状态 |")
+    print("|---|---|---|---|")
+    for s in sug:
+        mark = "已入名单" if s.api in known else "候选"
+        print(f"| `{s.api}` | {len(s.distinct_handlers)} | {s.call_sites} | {mark} |")
+    if failures:
+        print(f"\n解析失败 {len(failures)} 个文件（详见 stderr 不列）",
+              file=sys.stderr)
+    return 0
+
+
+def cmd_suggest_vars(args: argparse.Namespace) -> int:
+    """全局变量 Top-N 候选（设计文档 §5.5-1 自动候选部分）。"""
+    cfg = _load_config(args.config)
+    from .suggest import suggest_global_vars
+
+    sug = suggest_global_vars(
+        args.src, top=args.top,
+        extensions=cfg.get("scan", {}).get("extensions"))
+    known = set(cfg.get("globalvar", {}).get("variables", []))
+    print("# 全局变量候选 Top-%d（人审后拷入 [globalvar] variables）" % args.top)
+    print()
+    print("| 变量 | 全仓引用次数 | 声明位置 | 状态 |")
+    print("|---|---|---|---|")
+    for s in sug:
+        mark = "已入名单" if s.name in known else "候选"
+        print(f"| `{s.name}` | {s.refs} | `{s.decl_file}` | {mark} |")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(prog="navmap", description="C/C++ 导航图提取器（libclang 20.1.0）")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -212,6 +258,19 @@ def main(argv: list[str] | None = None) -> int:
     pf.add_argument("--subsystem", default="default", help="子系统名（产物文件名后缀）")
     pf.add_argument("--config", default=None, help="navmap.toml 路径（默认取项目 config/）")
     pf.set_defaults(fn=cmd_refresh)
+
+    pa = sub.add_parser("suggest-apis", help="注册 API 候选发现（人审后入 [scan] register_apis）")
+    pa.add_argument("--src", required=True, help="源码根目录")
+    pa.add_argument("--compdb", required=True, help="compile_commands.json 路径")
+    pa.add_argument("--threshold", type=int, default=5, help="不同 handler 数阈值（默认 5）")
+    pa.add_argument("--config", default=None, help="navmap.toml 路径（默认取项目 config/）")
+    pa.set_defaults(fn=cmd_suggest_apis)
+
+    pv = sub.add_parser("suggest-vars", help="全局变量 Top-N 候选（人审后入 [globalvar] variables）")
+    pv.add_argument("--src", required=True, help="源码根目录")
+    pv.add_argument("--top", type=int, default=20, help="取引用次数前 N（默认 20）")
+    pv.add_argument("--config", default=None, help="navmap.toml 路径（默认取项目 config/）")
+    pv.set_defaults(fn=cmd_suggest_vars)
 
     args = ap.parse_args(argv)
     return args.fn(args)

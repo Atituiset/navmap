@@ -59,6 +59,10 @@ navmap refresh --src /path/to/src \
 
 # 产物质检报告（ERROR/WARN/INFO 分级；--src 开启孤儿 handler 与覆盖率检查）
 navmap report --out .navmap/out/ --src /path/to/src
+
+# 名单扩充候选（人审后入配置，不自动改配置）
+navmap suggest-apis  --src /path/to/src --compdb compile_commands.json  # 注册 API
+navmap suggest-vars  --src /path/to/src --top 20                        # 全局变量
 ```
 
 产物（同源生成，JSON 机器查询 + 同名 `.md` prompt 注入）：
@@ -147,10 +151,9 @@ incdec / addr 保守记写 / 其余为读），写者全量列出、读者按
 
 - `clang_Cursor_Evaluate` 仅对白名单表达式 kind 求值（INIT_LIST_EXPR 等
   聚合初始化会 segfault libclang，见 `navmap/clangeval.py` 注释与回归测试）；
-- 注册 API 自动扩展（"多函数指针参数调用点" 启发式名单扩充）未实现，
-  目前靠 `[scan] register_apis` 手工名单（设计 §5.3-1 的半自动部分）；
+- 名单扩充为半自动：`suggest-apis`/`suggest-vars` 出候选清单，人工确认后
+  拷入配置（设计 §5.3-1/§5.5-1 的人审环节保留）；
 - globalvar 引用分类不穿透函数调用（`f(&g_x)` 传参按 `addr` 保守记写）；
-  自动候选（引用 Top N）未实现，名单手工维护；
 - clangd 索引联动校验（§7 一致性检查）未实现，MVP 期用 USR 对齐；
 - refresh 只按 committed diff 判断（工作区未提交改动不参与）；头文件包含关系
   只看直接 `#include`，不递归；globalvar 任一 ref_file 变更即整体重算；
@@ -175,6 +178,10 @@ incdec / addr 保守记写 / 其余为读），写者全量列出、读者按
 - 实测抓出并修复：compdb 相对路径解析、借参头文件 `-x` 语言、`-Werror`
   熔断、`clang_Cursor_Evaluate` 对 INIT_LIST_EXPR segfault（已加白名单
   与回归测试）。
+- 名单扩充实测：`suggest-apis` 在 u-boot 发现 `efi_create_event`（8 handler）、
+  `cyclic_register`（5）等真实注册 API；`suggest-vars` 全仓扫描约 6.5 分钟
+  （176 万行），通用短名（`state`/`test` 类）有噪音，靠人审过滤——电信
+  代码 `g_` 前缀命名下信噪比会好得多。
 
 ## 测试
 

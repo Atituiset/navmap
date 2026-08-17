@@ -212,7 +212,9 @@ navmap report --out .navmap/out/ > navmap-quality.md
 - **M5**：incr.py（`navmap refresh`，git diff 受影响集合五条规则，多产物 merge，globalvar 按 ref_files 失效整体重算）+ CI 集成文档（`docs/ci-integration.md`；clangd 索引联动校验留作后续）。
 - **真实仓实测修正**：compdb 相对路径按 directory 绝对化、借参头文件补 `-x`、统一 `-Wno-error`、`[extract] extra_args` 逃生口。u-boot（176 万行 C）19 表 131 表项抽查全对；srsRAN（100 万行 C++）25 干净解析 0 表（现代 C++ 为注册式，待生产环境配 register_apis 验证）。
 
-已知遗留：注册 API 自动扩展名单、globalvar 引用 Top-N 自动候选、clangd 索引一致性校验（§7 有索引后开启）。
+- **名单扩充（§5.3-1/§5.5-1）**：`suggest-apis`（函数指针参数 + 不同 handler 数 ≥ 阈值的调用点归集）与 `suggest-vars`（extern 声明全局变量按全仓引用次数 Top-N）出候选清单，人审后入配置。
+
+已知遗留：clangd 索引一致性校验（§7 有索引后开启，待生产索引环境）。
 
 M1 前可用现成开源 C 项目（如含消息表的协议栈实现）做 fixture 先行开发，不等 M0。
 
