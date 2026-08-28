@@ -100,3 +100,18 @@ def test_bare_fnptr_array(extracted):
     assert by_idx["0"].handler_usr
     assert "bare_fnptr.c:" in by_idx["0"].handler_loc
     assert by_idx["0"].msg_id_value == "0"
+
+
+def test_matrix_fnptr_array(extracted):
+    """多维裸函数指针数组：递归展开为表项，msg_id = 复合下标。"""
+    art, _ = extracted
+    t = _tables_by_name(art)["FP_MATRIX_TBL"]
+    assert t.file == "matrix_fnptr.c"
+    by_idx = {e.msg_id: e for e in t.entries}
+    assert set(by_idx) == {"0,0", "0,1", "1,0", "1,1"}
+    assert by_idx["0,0"].handler == "h_a0"
+    assert by_idx["0,1"].handler == "h_a1"
+    assert by_idx["1,0"].handler == "h_b0"
+    assert by_idx["1,1"].handler == "h_b1"
+    assert by_idx["1,1"].handler_usr
+    assert "matrix_fnptr.c:" in by_idx["1,1"].handler_loc

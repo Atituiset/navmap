@@ -56,7 +56,12 @@ class DispatchExtractor(TUExtractor):
         t = var.type
         if t.kind not in (ci.TypeKind.CONSTANTARRAY, ci.TypeKind.INCOMPLETEARRAY):
             return None
+        # 逐层剥数组维度并计数：tbl[N](dims=1) / tbl[N][M](dims=2) / ...
+        dims = 1
         elem = t.get_array_element_type().get_canonical()
+        while elem.kind in (ci.TypeKind.CONSTANTARRAY, ci.TypeKind.INCOMPLETEARRAY):
+            dims += 1
+            elem = elem.get_array_element_type().get_canonical()
         bare_fnptr = False
         if elem.kind == ci.TypeKind.RECORD:
             decl = elem.get_declaration()
@@ -83,16 +88,43 @@ class DispatchExtractor(TUExtractor):
             line=loc.line,
             source_hash=file_hash(loc.file.name) if loc.file else "",
         )
-        for idx, entry_cur in enumerate(init.get_children()):
+        for idx_path, entry_cur in self._iter_init_leaves(init):
             if bare_fnptr:
-                e = self._extract_fnptr_entry(entry_cur, idx)
-            else:
-                if entry_cur.kind != ci.CursorKind.INIT_LIST_EXPR:
-                    continue
+                e = self._extract_fnptr_entry(entry_cur, idx_path)
+                if e is not None:
+                    table.entries.append(e)
+        if not bare_fnptr:
+            for entry_cur in self._iter_struct_entries(init, dims - 1):
                 e = self._extract_entry(entry_cur)
-            if e is not None:
-                table.entries.append(e)
+                if e is not None:
+                    table.entries.append(e)
         return table  # 空表也保留（覆盖率统计用）
+
+    # ---------------- 初始化列表遍历（支持多维数组） ----------------
+
+    def _iter_init_leaves(self, init, prefix: tuple = ()):
+        """嵌套 INIT_LIST_EXPR 递归展开（裸函数指针数组用）：
+        一维 → ((i), handler)；多维 → ((i,j,...), handler)。"""
+        ci = self._cindex
+        for idx, child in enumerate(init.get_children()):
+            if child.kind == ci.CursorKind.INIT_LIST_EXPR:
+                yield from self._iter_init_leaves(child, prefix + (idx,))
+            else:
+                yield prefix + (idx,), child
+
+    def _iter_struct_entries(self, init, depth: int):
+        """结构体表的表项遍历：depth = 剩余「行」层数（数组维度 - 1）。
+
+        depth == 0 时子节点即表项——即使表项首字段是聚合初始化
+        （如 `{ {1,2}, handler }` 的 ids[2]），也整体产出不拆开。"""
+        ci = self._cindex
+        for child in init.get_children():
+            if child.kind != ci.CursorKind.INIT_LIST_EXPR:
+                continue
+            if depth > 0:
+                yield from self._iter_struct_entries(child, depth - 1)
+            else:
+                yield child
 
     # ---------------- 裸函数指针数组 ----------------
 
@@ -103,8 +135,8 @@ class DispatchExtractor(TUExtractor):
         pt = t.get_pointee().get_canonical()
         return pt.kind in (ci.TypeKind.FUNCTIONPROTO, ci.TypeKind.FUNCTIONNOPROTO)
 
-    def _extract_fnptr_entry(self, child, idx: int) -> Entry | None:
-        """裸函数指针数组元素：即 handler 本身，msg_id 取数组下标。"""
+    def _extract_fnptr_entry(self, child, idx_path: tuple) -> Entry | None:
+        """裸函数指针数组元素：即 handler 本身，msg_id 取数组下标（多维为复合下标）。"""
         ref = self._peel_to_ref(child)
         if ref is None or ref.kind != self._cindex.CursorKind.FUNCTION_DECL:
             return None
@@ -112,16 +144,15 @@ class DispatchExtractor(TUExtractor):
         rloc = ref.location
         if rloc.file:
             handler_loc = f"{self._relpath(rloc.file.name)}:{rloc.line}"
+        msg_id = ",".join(str(i) for i in idx_path)
         return Entry(
-            msg_id=str(idx),
-            msg_id_value=str(idx),
+            msg_id=msg_id,
+            msg_id_value=msg_id,
             handler=ref.spelling,
             handler_loc=handler_loc,
             handler_usr=ref.get_usr(),
             cond=self._cond_at(child),
         )
-
-    # ---------------- 表项 ----------------
 
     def _extract_entry(self, entry_cur) -> Entry | None:
         handler = None
