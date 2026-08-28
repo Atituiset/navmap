@@ -57,11 +57,15 @@ class DispatchExtractor(TUExtractor):
         if t.kind not in (ci.TypeKind.CONSTANTARRAY, ci.TypeKind.INCOMPLETEARRAY):
             return None
         elem = t.get_array_element_type().get_canonical()
-        if elem.kind != ci.TypeKind.RECORD:
+        bare_fnptr = False
+        if elem.kind == ci.TypeKind.RECORD:
+            decl = elem.get_declaration()
+            if not self._has_funcptr_member(decl):
+                return None  # 元素结构体不含函数指针成员 → 不是分发表
+        elif self._is_function_pointer(elem):
+            bare_fnptr = True  # 裸函数指针数组：{handler, ...}（typedef/using 别名均可）
+        else:
             return None
-        decl = elem.get_declaration()
-        if not self._has_funcptr_member(decl):
-            return None  # 元素结构体不含函数指针成员 → 不是分发表
 
         init = None
         for child in var.get_children():
@@ -79,13 +83,43 @@ class DispatchExtractor(TUExtractor):
             line=loc.line,
             source_hash=file_hash(loc.file.name) if loc.file else "",
         )
-        for entry_cur in init.get_children():
-            if entry_cur.kind != ci.CursorKind.INIT_LIST_EXPR:
-                continue
-            e = self._extract_entry(entry_cur)
+        for idx, entry_cur in enumerate(init.get_children()):
+            if bare_fnptr:
+                e = self._extract_fnptr_entry(entry_cur, idx)
+            else:
+                if entry_cur.kind != ci.CursorKind.INIT_LIST_EXPR:
+                    continue
+                e = self._extract_entry(entry_cur)
             if e is not None:
                 table.entries.append(e)
         return table  # 空表也保留（覆盖率统计用）
+
+    # ---------------- 裸函数指针数组 ----------------
+
+    def _is_function_pointer(self, t) -> bool:
+        ci = self._cindex
+        if t.kind != ci.TypeKind.POINTER:
+            return False
+        pt = t.get_pointee().get_canonical()
+        return pt.kind in (ci.TypeKind.FUNCTIONPROTO, ci.TypeKind.FUNCTIONNOPROTO)
+
+    def _extract_fnptr_entry(self, child, idx: int) -> Entry | None:
+        """裸函数指针数组元素：即 handler 本身，msg_id 取数组下标。"""
+        ref = self._peel_to_ref(child)
+        if ref is None or ref.kind != self._cindex.CursorKind.FUNCTION_DECL:
+            return None
+        handler_loc = None
+        rloc = ref.location
+        if rloc.file:
+            handler_loc = f"{self._relpath(rloc.file.name)}:{rloc.line}"
+        return Entry(
+            msg_id=str(idx),
+            msg_id_value=str(idx),
+            handler=ref.spelling,
+            handler_loc=handler_loc,
+            handler_usr=ref.get_usr(),
+            cond=self._cond_at(child),
+        )
 
     # ---------------- 表项 ----------------
 

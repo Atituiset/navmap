@@ -86,3 +86,17 @@ def test_artifact_json_roundtrip(extracted):
     assert len(art2.tables) == len(art.tables)
     names = {t.name for t in art2.tables}
     assert "g_msgTable" in names
+
+
+def test_bare_fnptr_array(extracted):
+    """裸函数指针数组（无结构体包装）：提取为分发表，msg_id = 数组下标。"""
+    art, _ = extracted
+    t = _tables_by_name(art)["FP_HANDLER_TBL"]
+    assert t.file == "bare_fnptr.c"
+    by_idx = {e.msg_id: e for e in t.entries}
+    assert set(by_idx) == {"0", "1", "2", "3"}
+    assert by_idx["0"].handler == "alpha_handler"
+    assert by_idx["1"].handler == "beta_handler"
+    assert by_idx["0"].handler_usr
+    assert "bare_fnptr.c:" in by_idx["0"].handler_loc
+    assert by_idx["0"].msg_id_value == "0"

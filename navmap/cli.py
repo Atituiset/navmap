@@ -40,9 +40,10 @@ def cmd_extract(args: argparse.Namespace) -> int:
     # [1] 文本粗筛（分钟级）→ 候选文件清单
     candidates = scan(
         args.src,
-        name_roots=scan_cfg.get("name_roots", ["table", "disp", "map", "hdlr", "state", "trans"]),
+        name_roots=scan_cfg.get("name_roots", ["table", "tbl", "disp", "map", "hdlr", "state", "trans"]),
         register_apis=scan_cfg.get("register_apis", []),
         extensions=scan_cfg.get("extensions"),
+        exclude_dirs=tuple(scan_cfg.get("exclude_dirs") or ()) or None,
     )
     print(f"[navmap] 粗筛候选文件: {len(candidates)}", file=sys.stderr)
 

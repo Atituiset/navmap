@@ -33,7 +33,7 @@ def extracted(fixture_dir):
     clangenv.setup()
     candidates = scan(
         fixture_dir,
-        name_roots=["table", "disp", "map", "hdlr", "state", "trans"],
+        name_roots=["table", "tbl", "disp", "map", "hdlr", "state", "trans"],
         register_apis=[],
         extensions=[".c", ".h", ".def"],
     )

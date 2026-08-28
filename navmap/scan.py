@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import fnmatch
 import os
 import re
 from dataclasses import dataclass, field
@@ -13,6 +14,17 @@ from pathlib import Path
 
 # 函数指针成员/typedef：`void (*handler)(...)`、`int (*cb)()` 等
 _FUNC_PTR_RE = re.compile(r"\(\s*\*\s*\w+\s*\)\s*\(")
+
+# 默认排除目录（支持 fnmatch 通配）：版本控制、依赖、构建产物、工具自身、第三方
+DEFAULT_EXCLUDE_DIRS: tuple[str, ...] = (
+    ".git", "node_modules", ".venv", "vendor", "_deps", "build", "build-*",
+    ".navmap-tool", ".navmap", ".navmap-out", ".codegraph",
+    "third_party", "third-party", "external", "googletest", "gtest", "gmock",
+)
+
+
+def _match_exclude(dirname: str, patterns: tuple[str, ...]) -> bool:
+    return any(fnmatch.fnmatch(dirname, pat) for pat in patterns)
 
 
 @dataclass
@@ -69,16 +81,17 @@ def scan(
     name_roots: list[str],
     register_apis: list[str] | None = None,
     extensions: list[str] | None = None,
-    exclude_dirs: tuple[str, ...] = (".git", "node_modules", ".venv", "vendor", "build"),
+    exclude_dirs: tuple[str, ...] | None = None,
 ) -> list[Candidate]:
     """全仓文本粗筛，返回候选文件清单。"""
     src_root = Path(src_root)
     exts = tuple(extensions or [".c", ".h"])
+    excludes = tuple(exclude_dirs) if exclude_dirs else DEFAULT_EXCLUDE_DIRS
     array_re, api_res = build_matchers(name_roots, register_apis)
 
     candidates: dict[str, Candidate] = {}
     for dirpath, dirnames, filenames in os.walk(src_root):
-        dirnames[:] = [d for d in dirnames if d not in exclude_dirs]
+        dirnames[:] = [d for d in dirnames if not _match_exclude(d, excludes)]
         for fn in filenames:
             if not fn.endswith(exts):
                 continue
