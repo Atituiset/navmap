@@ -52,7 +52,7 @@ def test_designated_init(ops_tables):
     assert by_member["connect_it"].handler == "ops_connect_designated"
 
 
-def test_array_tables_not_claimed(ops_tables):
+def test_array_tables_not_claimed(fixture_dir):
     """数组形态（dispatch 的领域）不被 ops-struct 提取器认领。"""
     from navmap import clangenv
     from navmap.compdb import CompilationDB
