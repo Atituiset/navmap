@@ -112,7 +112,7 @@ jobs:
                                   print("   sub:", sub.kind, "spelling:", sub.spelling,
                                         "extent text:", repr(ex._extent_text(sub))[:120])
           EOF
-          python3 /tmp/diag.py 2>&1 | head -60 || true
+          "$NAVMAP/.venv/bin/python" /tmp/diag.py 2>&1 | head -80 || true
 
       - name: 回归断言（表数/表项数/USR 完整性/候选量级）
         run: |
