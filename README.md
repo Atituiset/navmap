@@ -200,12 +200,24 @@ incdec / addr 保守记写 / 其余为读），写者全量列出、读者按
 .venv/bin/python -m pytest tests/ -q
 ```
 
-CI（`.github/workflows/ci.yml`）四层：fixture 单测 → u-boot v2026.07 全量
+  CI（`.github/workflows/ci.yml`）四层：fixture 单测 → u-boot v2026.07 全量
 提取回归（表数/表项/USR 完整性/refresh 短路断言）→ AetherStack master
 提取回归（构建目录污染断言 + suggest-apis 冒烟）→ **种子仓矩阵**（fork 在
 Atituiset 下的 SAST seed repos：freeDiameter/collectd/pjproject 验证 M3
 registry、curl 验证 ops-struct、open5gs/usrsctp 作为 switch-FSM 负对照；
 每个种子配真实注册 API 名单跑 extract 并断言产出，M4 globalvar 同场验证）。
+
+**种子矩阵实测（2026-09-04，全绿 run 33878681109）**：
+
+| 种子仓 | registry | 其他表 | 说明 |
+|---|---|---|---|
+| collectd | 83 表 / 84 项 | 6 表 / 30 项 | `plugin_register_*` 全量提取；globalvar：`hostname_g` 20 refs / 2 writers |
+| open5gs | 33 表 / 40 项 | 2481 表 / 945 项 | `ogs_fsm_*` 注册提取成功；switch-FSM 缺口量化（负对照） |
+| freeDiameter | 5 表 / 60 项 | 1 表 / 7 项 | `fd_disp_register`/`fd_ext_register` 提取成功 |
+| curl | —（无注册 API） | 14 表 / 81 项 | ops-struct：`Curl_handler`/`cft` 等单结构体分发全量提取 |
+| pjproject | 29 表 / 98 项 | 13 表 / 144 项 | `pjsip_endpt_register_module(&mod)` 结构体注册形态提取成功 |
+
+M3（registry）/M4（globalvar）/M6（ops-struct）至此从"实现"升级为"真实验证"。
 
 fixture `tests/fixtures/mini_ims/` 覆盖：五种分发表形态（普通宏表/乱序指定
 初始化/X-Macro/#ifdef 表项/cast 与 & 形式 handler）、状态机表（普通行/
