@@ -291,7 +291,7 @@ jobs:
           pip install -q meson ninja
           sudo apt-get update -q && sudo apt-get install -q -y \
             autoconf automake libtool pkg-config bison flex libssl-dev bear \
-            libsctp-dev libtalloc-dev libgnutls28-dev
+            libsctp-dev libtalloc-dev libgnutls28-dev libmongoc-dev
 
       - name: 生成 compile_commands.json + navmap 配置
         run: |
@@ -302,12 +302,13 @@ jobs:
               meson setup build 2>&1 | tail -5
               ;;
             collectd)
-              ./autogen.sh 2>&1 | tail -5
+              autoreconf -fi 2>&1 | tail -3
               ./configure 2>&1 | tail -5
               bear -- make -j"$(nproc)" 2>&1 | tail -5
               ;;
             curl)
-              ./autogen.sh --without-ssl 2>&1 | tail -5 || { autoreconf -fi; ./configure --without-ssl 2>&1 | tail -5; }
+              autoreconf -fi 2>&1 | tail -3
+              ./configure --without-ssl --without-libpsl --disable-shared 2>&1 | tail -5
               bear -- make -j"$(nproc)" lib 2>&1 | tail -5
               ;;
             pjproject)
@@ -346,7 +347,11 @@ jobs:
           cfg = cfg.replace(
               'register_apis = ["RegisterHandler", "MsgReg", "RegisterMsgHandler", "MsgRegister"]',
               'register_apis = ' + repr(apis))
+          cfg = cfg.replace('variables = [],', 'variables = [],')
           cfg = cfg.replace('variables = []', 'variables = ' + repr(gvars))
+          # vendored libclang 无 resource dir：补宿主 GCC 内建头（README 同款逃生口）
+          cfg = cfg.replace('# extra_args = ["-isystem", "/usr/lib/gcc/x86_64-linux-gnu/13/include"]',
+                            'extra_args = ["-isystem", "/usr/lib/gcc/x86_64-linux-gnu/13/include"]')
           if "$EXPECT" == "ops-struct":
               cfg = cfg.replace('ops_structs = false', 'ops_structs = true')
           open('/tmp/navmap-seed.toml', 'w').write(cfg)
