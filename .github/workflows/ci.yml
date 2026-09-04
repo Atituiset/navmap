@@ -291,7 +291,7 @@ jobs:
           pip install -q meson ninja
           sudo apt-get update -q && sudo apt-get install -q -y \
             autoconf automake libtool pkg-config bison flex libssl-dev bear \
-            libsctp-dev libtalloc-dev
+            libsctp-dev libtalloc-dev libgnutls28-dev
 
       - name: 生成 compile_commands.json + navmap 配置
         run: |
@@ -302,13 +302,17 @@ jobs:
               meson setup build 2>&1 | tail -5
               ;;
             collectd)
+              ./autogen.sh 2>&1 | tail -5
               ./configure 2>&1 | tail -5
               bear -- make -j"$(nproc)" 2>&1 | tail -5
               ;;
             curl)
-              # curl 的 cmake 需要新 cmake；autotools 路径：configure 后 bear 只构建 lib 目标
-              ./configure --without-ssl --disable-shared 2>&1 | tail -5
+              ./autogen.sh --without-ssl 2>&1 | tail -5 || { autoreconf -fi; ./configure --without-ssl 2>&1 | tail -5; }
               bear -- make -j"$(nproc)" lib 2>&1 | tail -5
+              ;;
+            pjproject)
+              ./configure --disable-gl 2>&1 | tail -5
+              bear -- make -j"$(nproc)" 2>&1 | tail -5
               ;;
             freeDiameter)
               cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON 2>&1 | tail -5
