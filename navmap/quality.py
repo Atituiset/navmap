@@ -23,9 +23,10 @@ _ORPHAN_NAME_RE = re.compile(
     r"^\s*(?:static\s+)?[\w\*]+\s+(handle_\w+|\w+_hdlr)\s*\([^;]*$")
 # 消息枚举来源：#define MSG_x <常量表达式> / enum 成员
 # 常量表达式右值允许宏/运算/数字（0x3EC、(1<<2)、MSG_BASE+5 等），漏抓比误抓要紧；
-# 函数宏（#define FOO(x) ...）右值以 "(" 开头会被下面的负向断言排除
+# 函数宏（#define FOO(x) ...）右值以 "(" 开头会被负向断言排除；
+# re.MULTILINE 使 ^ 锚定每行（原实现无 M 标志，只命中文件首行——实测 CI 抓出）
 _DEFINE_RE = re.compile(
-    r"^\s*#\s*define\s+(\w+)(?!\()\s+[^\s\\]")
+    r"^\s*#\s*define\s+(\w+)(?!\()\s+[^\s\\]", re.MULTILINE)
 _ENUM_MEMBER_RE = re.compile(r"^\s*(\w+)\s*(?:=\s*(?:0x[0-9a-fA-F]+|\d+))?\s*,?\s*$")
 
 
