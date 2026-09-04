@@ -184,14 +184,27 @@ class DispatchExtractor(TUExtractor):
         if not msg_id:
             # X-Macro 场景：子节点 extent 塌缩（实参 token 无独立 range），
             # 且 libclang 无法对非主文件范围分词——直接对表项 extent 的源码
-            # 文本（msg.def 原始拼写）做正则分词，取第一个非宏名、非 handler
-            # 的标识符。
+            # 文本做兜底分词。覆盖两类形态：
+            #  1. 宏调用形态 U_BOOT_SUBCMD_MKENT(info, 2, 1, do_blkmap_common)
+            #     → 首实参（剥引号）为 msg_id（u-boot 子命令名）；
+            #  2. 展开形态 {.name = "info", .cmd = fn} / { "info", ... }
+            #     → 取第一个字符串字面量或非 handler 标识符。
             text = self._extent_text(entry_cur)
-            for m in re.finditer(r"([A-Za-z_]\w*)\s*(\()?", text):
-                ident, paren = m.group(1), m.group(2)
-                if not paren and ident != handler:
-                    msg_id = ident
-                    break
+            mcall = re.match(r"\s*([A-Za-z_]\w*)\s*\((.*)\)\s*$", text, re.DOTALL)
+            if mcall:
+                first_arg = mcall.group(2).split(",")[0].strip().strip('"')
+                if first_arg and first_arg != handler:
+                    msg_id = first_arg
+            if not msg_id:
+                m = re.search(r'"([^"]+)"', text)
+                if m:
+                    msg_id = m.group(1)
+                else:
+                    for m in re.finditer(r"([A-Za-z_]\w*)\s*(\()?", text):
+                        ident, paren = m.group(1), m.group(2)
+                        if not paren and ident != handler:
+                            msg_id = ident
+                            break
 
         cond = self._cond_at(entry_cur)
         return Entry(

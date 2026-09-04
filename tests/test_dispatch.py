@@ -115,3 +115,17 @@ def test_matrix_fnptr_array(extracted):
     assert by_idx["1,1"].handler == "h_b1"
     assert by_idx["1,1"].handler_usr
     assert "matrix_fnptr.c:" in by_idx["1,1"].handler_loc
+
+
+def test_macro_call_entry_msg_id(extracted):
+    """宏调用形态表项（CMD_MKENT(MSG_1001, fn)，u-boot U_BOOT_SUBCMD_MKENT
+    同构）：msg_id 兜底从宏调用首实参（剥引号）取出，不得为空。"""
+    art, _ = extracted
+    t = _tables_by_name(art)["g_cmdMkTable"]
+    assert t.file == "macro_call.c"
+    by_handler = {e.handler: e for e in t.entries}
+    assert set(by_handler) == {"sess_handle_invite", "sess_handle_bye"}
+    for e in t.entries:
+        assert e.msg_id, f"宏调用表项 msg_id 兜底失败: {e.handler}"
+    assert by_handler["sess_handle_invite"].msg_id in ("MSG_1001", "msg_1001")
+    assert by_handler["sess_handle_bye"].msg_id in ("MSG_1002", "msg_1002")
