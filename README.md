@@ -165,7 +165,7 @@ incdec / addr 保守记写 / 其余为读），写者全量列出、读者按
   `[extract] extra_args` 显式补；
 - switch 式手写状态机不做（按设计）。
 
-## 真实仓实测（2026-08-17）
+## 真实仓实测（2026-08-17；2026-09-04 CI 复测）
 
 - **u-boot**（C，176 万行，sandbox defconfig compdb 1246 TU）：1228 候选 →
   19 表 131 表项（dispatch），USR/位置零缺失，抽查表项与源码逐一吻合；
@@ -182,6 +182,11 @@ incdec / addr 保守记写 / 其余为读），写者全量列出、读者按
   `cyclic_register`（5）等真实注册 API；`suggest-vars` 全仓扫描约 6.5 分钟
   （176 万行），通用短名（`state`/`test` 类）有噪音，靠人审过滤——电信
   代码 `g_` 前缀命名下信噪比会好得多。
+- **CI 复测（2026-09-04，GitHub Actions）**：u-boot v2026.07 复测 1212
+  候选 → 20 表 124 表项，USR/位置/msg_id 全量断言通过；期间抓出并修复
+  `U_BOOT_SUBCMD_MKENT` 宏展开塌缩 extent 的 msg_id 丢失（blkmap_subcmds
+  9 表项），补三重兜底（宏调用首实参归一 / eval_str / 声明文本按序配对）。
+  AetherStack 回归：构建目录（build*/_deps/googletest）零污染断言通过。
 
 ## 测试
 

@@ -85,35 +85,6 @@ jobs:
             --baseline "$BASELINE" --subsystem uboot --out /tmp/navmap-uboot/ \
             --config "$NAVMAP/config/navmap.toml" 2>&1 | tee /tmp/extract.log
 
-      - name: blkmap 诊断（宏调用表项 msg_id 兜底路径可观测性）
-        run: |
-          cat > /tmp/diag.py <<'EOF'
-          import sys
-          sys.path.insert(0, "/home/runner/work/navmap/navmap")
-          from navmap import clangenv
-          from navmap.compdb import CompilationDB
-          from navmap.extract.dispatch import DispatchExtractor
-          clangenv.setup()
-          ex = DispatchExtractor(CompilationDB("/home/runner/u-boot/compile_commands.json"),
-                                 src_root="/home/runner/u-boot")
-          import clang.cindex as ci
-          tu, fatal = ex._parse("/home/runner/u-boot/cmd/blkmap.c")
-          for cur in ex._walk_globals(tu.cursor):
-              if cur.spelling == "blkmap_subcmds":
-                  print("== blkmap_subcmds ==", "type:", cur.type.kind)
-                  for child in cur.get_children():
-                      if child.kind == ci.CursorKind.INIT_LIST_EXPR:
-                          for el in child.get_children():
-                              print("element kind:", el.kind, "extent:",
-                                    (el.extent.start.file.name if el.extent.start.file else None),
-                                    el.extent.start.line, el.extent.end.line)
-                              print("  entry text:", repr(ex._extent_text(el))[:200])
-                              for sub in el.get_children():
-                                  print("   sub:", sub.kind, "spelling:", sub.spelling,
-                                        "extent text:", repr(ex._extent_text(sub))[:120])
-          EOF
-          "$NAVMAP/.venv/bin/python" /tmp/diag.py 2>&1 | head -80 || true
-
       - name: 回归断言（表数/表项数/USR 完整性/候选量级）
         run: |
           python3 - <<'EOF'
