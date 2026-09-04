@@ -31,8 +31,39 @@ jobs:
         run: python3 -m venv .venv && .venv/bin/pip install -q -e '.[dev]'
       - name: libclang 探测（vendored 20.1.0）
         run: .venv/bin/python -c "from navmap import clangenv; print(clangenv.setup())"
+      - name: 诊断脚本就位（pytest 失败时 dump registry 表）
+        run: |
+          cat > /tmp/dump_reg.py <<'EOF'
+          import sys
+          sys.path.insert(0, ".")
+          from pathlib import Path
+          from navmap import clangenv
+          from navmap.compdb import CompilationDB
+          from navmap.extract.registry import RegistryExtractor
+          from navmap.scan import scan
+          clangenv.setup()
+          fixture = Path("tests/fixtures/mini_ims")
+          import subprocess
+          subprocess.run([sys.executable, str(fixture/"gen_compdb.py")], check=True)
+          cands = scan(fixture, name_roots=["table","tbl","disp","map","hdlr","state","trans"],
+                       register_apis=["MsgReg","ModReg","WrapReg"], extensions=[".c",".h",".def"])
+          ex = RegistryExtractor(CompilationDB(fixture/"compile_commands.json"),
+                                 src_root=fixture, register_apis=["MsgReg","ModReg","WrapReg"])
+          tables, failures = ex.extract_files([c.file for c in cands])
+          print("TABLES:", [(t.name, len(t.entries)) for t in tables])
+          print("FAILURES:", failures)
+          import clang.cindex as ci
+          tu, _ = ex._parse(str(fixture/"reg.c"))
+          for cur in ex._walk_calls(tu.cursor):
+              ref = cur.referenced
+              if ref is not None and ref.spelling in ("ModReg","WrapReg"):
+                  print("CALL:", ref.spelling, "args:", len(list(cur.get_arguments())))
+                  for a in cur.get_arguments():
+                      print("  arg:", a.kind, repr(ex._extent_text(a))[:60],
+                            "peel:", (r.kind if (r := ex._peel_to_ref(a)) is not None else None))
+          EOF
       - name: pytest
-        run: .venv/bin/python -m pytest tests/ -q
+        run: .venv/bin/python -m pytest tests/ -q || (.venv/bin/python /tmp/dump_reg.py 2>&1 | tail -40; exit 1)
 
   uboot-regress:
     name: 真实仓回归 — u-boot（176 万行 C）
