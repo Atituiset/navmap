@@ -264,33 +264,38 @@ jobs:
         run: python3 -m venv .venv && .venv/bin/pip install -q -e '.'
       - name: 克隆 ${{ matrix.repo }}
         run: git clone --depth 1 https://github.com/Atituiset/${{ matrix.repo }}.git ~/$REPO
-      - name: 安装构建工具（open5gs 需要 meson/ninja；collectd 需要 autotools）
-        if: matrix.repo == 'open5gs' || matrix.repo == 'collectd'
+      - name: 安装构建工具
         run: |
           pip install -q meson ninja
           sudo apt-get update -q && sudo apt-get install -q -y \
-            autoconf automake libtool pkg-config bison flex libssl-dev
+            autoconf automake libtool pkg-config bison flex libssl-dev bear
 
       - name: 生成 compile_commands.json + navmap 配置
         run: |
           cd ~/$REPO
+          set -o pipefail
           case "$REPO" in
             open5gs)
-              # meson configure 即产出 compdb（无需 build）
-              meson setup build 2>&1 | tail -3
+              meson setup build 2>&1 | tail -5
               ;;
             collectd)
-              # autotools：configure 后用 make -n 抓不到 compdb，
-              # 用 build-aux 的 compile_commands 生成器不可行 →
-              # 退路：bear 包 make。装 bear。
-              sudo apt-get install -q -y bear
-              ./configure 2>&1 | tail -3
-              bear -- make -j"$(nproc)" 2>&1 | tail -3
+              ./configure 2>&1 | tail -5
+              bear -- make -j"$(nproc)" 2>&1 | tail -5
+              ;;
+            curl)
+              autoreconf -fi >/dev/null 2>&1 || true
+              ./configure 2>&1 | tail -5
+              bear -- make -j"$(nproc)" lib 2>&1 | tail -5
+              ;;
+            freeDiameter)
+              cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON 2>&1 | tail -5
               ;;
             *)
-              cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON 2>&1 | tail -3
+              cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON 2>&1 | tail -5
               ;;
           esac
+          echo "---- compdb 探测 ----"
+          ls build*/compile_commands.json */compile_commands.json compile_commands.json 2>/dev/null || true
           python3 -c "
           import json, glob, os
           cand = sorted(set(
