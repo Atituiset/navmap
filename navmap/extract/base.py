@@ -179,6 +179,53 @@ class TUExtractor:
             return None
         return None
 
+    # ---------------- 结构体初始化器 fnptr 成员展开（registry/opsstruct 共用） ----------------
+
+    def _funcptr_field_names(self, record_decl) -> list[str]:
+        """结构体里函数指针成员的名字（按声明顺序）。"""
+        ci = self._cindex
+        names: list[str] = []
+        for f in record_decl.type.get_fields():
+            ft = f.type.get_canonical()
+            if ft.kind == ci.TypeKind.POINTER and ft.get_pointee().kind in (
+                ci.TypeKind.FUNCTIONPROTO,
+                ci.TypeKind.FUNCTIONNOPROTO,
+            ):
+                names.append(f.spelling)
+        return names
+
+    def _iter_fnptr_inits(self, record_decl, init):
+        """结构体初始化器 → 逐函数指针成员产出 (成员名, 值 cursor)。
+
+        指定初始化器按设计器成员名配对；按位初始化按声明顺序对齐。
+        与 opsstruct/registry 的消费逻辑共用（M6 结构体注册形态）。"""
+        ci = self._cindex
+        all_fields = [f.spelling for f in record_decl.type.get_fields()]
+        fnptr_fields = set(self._funcptr_field_names(record_decl))
+        pos = 0
+        for raw in init.get_children():
+            designator = None
+            if raw.kind == ci.CursorKind.UNEXPOSED_EXPR:
+                d = [c for c in raw.get_children()
+                     if c.kind in (ci.CursorKind.MEMBER_REF,
+                                   ci.CursorKind.MEMBER_REF_EXPR)]
+                if d:
+                    designator = d[0].spelling
+            value = self._designated_value(raw)
+            if designator is not None:
+                if designator not in all_fields:
+                    continue  # 未知设计器（嵌套聚合）跳过
+                name, pos = designator, all_fields.index(designator) + 1
+            else:
+                while pos < len(all_fields) and all_fields[pos] not in fnptr_fields:
+                    pos += 1
+                if pos >= len(all_fields):
+                    break
+                name = all_fields[pos]
+                pos += 1
+            if name in fnptr_fields:
+                yield name, value
+
     def _has_funcptr_member(self, record_decl) -> bool:
         """结构体是否含函数指针成员（按类型识别，不靠命名）。"""
         ci = self._cindex

@@ -13,7 +13,7 @@ def reg_extracted(fixture_dir):
     ex = RegistryExtractor(
         CompilationDB(fixture_dir / "compile_commands.json"),
         src_root=fixture_dir,
-        register_apis=["MsgReg"],
+        register_apis=["MsgReg", "ModReg", "WrapReg"],
     )
     tables, failures = ex.extract_files([str(fixture_dir / "reg.c")])
     return tables, failures
@@ -25,9 +25,8 @@ def test_no_failures(reg_extracted):
 
 def test_virtual_table(reg_extracted):
     tables, _ = reg_extracted
-    assert len(tables) == 1
-    t = tables[0]
-    assert t.name == "registry:MsgReg"
+    by_name = {t.name: t for t in tables}
+    t = by_name["registry:MsgReg"]
     assert t.file == "reg.c"
     assert t.source_hash.startswith("sha256:")
     assert len(t.entries) == 3
@@ -60,3 +59,29 @@ def test_cast_entry(reg_extracted):
     assert e.handler == "sess_handle_refer"
     assert e.handler_usr
     assert e.cond is None
+
+
+def test_struct_handler_registration(reg_extracted):
+    """&mod 形态（pjsip pjsip_endpt_register_module 同构）：注册结构体的
+    fnptr 成员展开为表项，msg_id = 成员名。"""
+    tables, _ = reg_extracted
+    by_name = {t.name: t for t in tables}
+    t = by_name["registry:ModReg"]
+    by_member = {e.msg_id: e for e in t.entries}
+    assert set(by_member) == {"on_rx_request", "on_rx_response"}
+    assert by_member["on_rx_request"].handler == "sess_handle_invite"
+    assert by_member["on_rx_response"].handler == "sess_handle_bye"
+    for e in t.entries:
+        assert e.handler_usr
+
+
+def test_nested_member_registration(reg_extracted):
+    """&mod.member 嵌套形态（pjsip &mod_evsub.mod 同构）：下钻 member 的
+    嵌套初始化器展开 fnptr 成员。"""
+    tables, _ = reg_extracted
+    by_name = {t.name: t for t in tables}
+    t = by_name["registry:WrapReg"]
+    by_member = {e.msg_id: e for e in t.entries}
+    assert set(by_member) == {"on_rx_request", "on_rx_response"}
+    assert by_member["on_rx_request"].handler == "sess_handle_refer"
+    assert by_member["on_rx_response"].handler == "sess_handle_notify"

@@ -57,18 +57,6 @@ class OpsStructExtractor(TUExtractor):
 
     # ---------------- 识别 ----------------
 
-    def _funcptr_field_names(self, record_decl) -> list[str]:
-        ci = self._cindex
-        names: list[str] = []
-        for f in record_decl.type.get_fields():
-            ft = f.type.get_canonical()
-            if ft.kind == ci.TypeKind.POINTER and ft.get_pointee().kind in (
-                ci.TypeKind.FUNCTIONPROTO,
-                ci.TypeKind.FUNCTIONNOPROTO,
-            ):
-                names.append(f.spelling)
-        return names
-
     def _try_ops_struct(self, var) -> Table | None:
         ci = self._cindex
         t = var.type.get_canonical()
@@ -77,9 +65,6 @@ class OpsStructExtractor(TUExtractor):
         decl = t.get_declaration()
         fnptr_fields = self._funcptr_field_names(decl)
         if len(fnptr_fields) < self.MIN_FUNCPTRS:
-            return None
-        all_fields = [f.spelling for f in decl.type.get_fields()]
-        if not all_fields:
             return None
 
         init = None
@@ -98,33 +83,7 @@ class OpsStructExtractor(TUExtractor):
             line=loc.line,
             source_hash=file_hash(loc.file.name) if loc.file else "",
         )
-        # 指定初始化器按成员名配对；按位初始化按声明顺序对齐（跳过聚合行）
-        pos = 0
-        for raw_child in init.get_children():
-            designator = None
-            # DesignatedInitExpr → UNEXPOSED_EXPR(MEMBER_REF, value)
-            if raw_child.kind == ci.CursorKind.UNEXPOSED_EXPR:
-                children = list(raw_child.get_children())
-                d = [c for c in children
-                     if c.kind in (ci.CursorKind.MEMBER_REF,
-                                   ci.CursorKind.MEMBER_REF_EXPR)]
-                if d:
-                    designator = d[0].spelling
-            value = self._designated_value(raw_child)
-            if designator is not None:
-                if designator not in all_fields:
-                    continue  # 嵌套聚合设计器，跳过
-                name, pos = designator, all_fields.index(designator) + 1
-            else:
-                while pos < len(all_fields) and all_fields[pos] not in fnptr_fields:
-                    pos += 1  # 按位初始化：跳过非函数指针成员
-                if pos >= len(all_fields):
-                    break
-                name = all_fields[pos]
-                pos += 1
-            if name not in fnptr_fields:
-                continue
-
+        for name, value in self._iter_fnptr_inits(decl, init):
             ref = self._peel_to_ref(value)
             if ref is None or ref.kind != ci.CursorKind.FUNCTION_DECL:
                 continue  # ZERO_NULL / NULL / 函数指针变量，非直接函数引用
@@ -138,6 +97,6 @@ class OpsStructExtractor(TUExtractor):
                 handler=ref.spelling,
                 handler_loc=handler_loc,
                 handler_usr=ref.get_usr(),
-                cond=self._cond_at(raw_child),
+                cond=self._cond_at(value),
             ))
         return table  # 空 entries 也保留（类型是 ops-struct 但全 NULL 填充）
