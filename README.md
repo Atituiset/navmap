@@ -211,11 +211,15 @@ registry、curl 验证 ops-struct、open5gs/usrsctp 作为 switch-FSM 负对照�
 
 | 种子仓 | registry | 其他表 | 说明 |
 |---|---|---|---|
-| collectd | 83 表 / 84 项 | 6 表 / 30 项 | `plugin_register_*` 全量提取；globalvar：`hostname_g` 20 refs / 2 writers |
-| open5gs | 33 表 / 40 项 | 2481 表 / 945 项 | `ogs_fsm_*` 注册提取成功；switch-FSM 缺口量化（负对照） |
-| freeDiameter | 5 表 / 60 项 | 1 表 / 7 项 | `fd_disp_register`/`fd_ext_register` 提取成功 |
-| curl | —（无注册 API） | 14 表 / 81 项 | ops-struct：`Curl_handler`/`cft` 等单结构体分发全量提取 |
-| pjproject | 29 表 / 98 项 | 13 表 / 144 项 | `pjsip_endpt_register_module(&mod)` 结构体注册形态提取成功 |
+| [Atituiset/collectd](https://github.com/Atituiset/collectd) | 83 表 / 84 项 | 6 表 / 30 项 | `plugin_register_*` 全量提取；globalvar：`hostname_g` 20 refs / 2 writers |
+| [Atituiset/open5gs](https://github.com/Atituiset/open5gs) | 33 表 / 40 项 | 2481 表 / 945 项 | `ogs_fsm_*` 注册提取成功；switch-FSM 缺口量化（负对照） |
+| [Atituiset/freeDiameter](https://github.com/Atituiset/freeDiameter) | 5 表 / 60 项 | 1 表 / 7 项 | `fd_disp_register`/`fd_ext_register` 提取成功 |
+| [Atituiset/curl](https://github.com/Atituiset/curl) | —（无注册 API） | 14 表 / 81 项 | ops-struct：`Curl_handler`/`cft` 等单结构体分发全量提取 |
+| [Atituiset/pjproject](https://github.com/Atituiset/pjproject) | 29 表 / 98 项 | 13 表 / 144 项 | `pjsip_endpt_register_module(&mod)` 结构体注册形态提取成功 |
+| [Atituiset/usrsctp](https://github.com/Atituiset/usrsctp) | — | — | switch-FSM 负对照（实证全版本皆 switch 式状态机） |
+
+种子仓均为 fork（同步上游、只作 ground truth 不改代码），各仓 GitHub
+description 已标注其作为 SAST seed repo 的作用与对应提取器。
 
 M3（registry）/M4（globalvar）/M6（ops-struct）至此从"实现"升级为"真实验证"。
 

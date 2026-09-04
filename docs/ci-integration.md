@@ -76,8 +76,23 @@ fi
 
 | 仓 | 规模 | 候选 | extract 耗时 | refresh（无表变更） |
 |---|---|---|---|---|
-| u-boot | 176 万行 C | 1228 | 分钟级（后台任务） | 秒级短路 |
+| u-boot | 176 万行 C | 1212 | 约 6 min（CI） | 秒级短路 |
 | srsRAN | 100 万行 C++ | 29 | 秒级 | 秒级短路 |
 
 libclang 解析是主要成本，与候选文件数线性相关；`refresh` 只解析受影响候选，
 nightly < 30min 的验收标准在千万行级仓上按"候选数 × 单文件解析耗时"估算即可。
+
+## SAST 种子仓（M3/M4/M6 真实验证语料）
+
+CI 种子矩阵对以下 fork 仓（同步上游、只作 ground truth）跑真实提取：
+
+| 种子仓 | 上游 | 验证目标 |
+|---|---|---|
+| https://github.com/Atituiset/collectd | collectd/collectd | M3 registry（`plugin_register_*`）+ M4 globalvar |
+| https://github.com/Atituiset/pjproject | pjsip/pjproject | M3 registry（`pjsip_endpt_register_module(&mod)` 结构体形态）|
+| https://github.com/Atituiset/freeDiameter | freeDiameter/freeDiameter | M3 registry（`fd_disp_register`/`fd_ext_register`）|
+| https://github.com/Atituiset/curl | curl/curl | M6 ops-struct（`Curl_protocol`/`cft` 单结构体分发）|
+| https://github.com/Atituiset/open5gs | open5gs/open5gs | 电信 C 正样本 + switch-FSM 负对照 |
+| https://github.com/Atituiset/usrsctp | sctplab/usrsctp | switch-FSM 负对照（实证全版本皆 switch 式）|
+
+各仓 GitHub description 已标注 SAST seed repo 用途；实测数字见 README 测试节。
