@@ -1,5 +1,7 @@
 """scan.py 粗筛测试：误报允许，漏报不允许。"""
 
+import os
+
 from navmap.scan import scan
 
 
@@ -40,3 +42,28 @@ def test_scan_register_api(fixture_dir):
     )
     files = {c.file.rsplit("/", 1)[-1] for c in cands}
     assert "handlers.h" in files  # 声明处命中 register-api 字面搜索
+
+
+def test_scan_parallel_matches_serial(fixture_dir):
+    """并行粗筛与串行结果完全一致。"""
+    serial = scan(fixture_dir,
+                  name_roots=["table", "disp", "map", "hdlr", "state", "trans"],
+                  extensions=[".c", ".h", ".def"])
+    parallel = scan(fixture_dir,
+                    name_roots=["table", "disp", "map", "hdlr", "state", "trans"],
+                    extensions=[".c", ".h", ".def"], workers=4)
+    assert serial == parallel
+
+
+def test_scan_excludes_build_variants(fixture_dir, tmp_path):
+    """fnmatch 通配排除目录：build-* / build-*-* / _deps 下的候选不进清单。"""
+    for d in ("build-asan", "build", "_deps/googletest-src"):
+        os.makedirs(tmp_path / d, exist_ok=True)
+    # 每个目录放一个必命中的候选文件
+    for d in ("build-asan", "build", "_deps/googletest-src"):
+        (tmp_path / d / "g_msgTable.c").write_text(
+            "void f(void);\n"
+            "void (*g_msgTable[])(void) = { f };\n")
+    cands = scan(tmp_path, name_roots=["table"], extensions=[".c"])
+    files = {c.file for c in cands}
+    assert files == set()  # 全部被排除

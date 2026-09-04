@@ -105,7 +105,7 @@ def refresh(
     scan_cfg = cfg.get("scan", {})
     sm_cfg = cfg.get("statemachine", {})
     name_roots = scan_cfg.get("name_roots",
-                              ["table", "disp", "map", "hdlr", "state", "trans"])
+                              ["table", "tbl", "disp", "map", "hdlr", "state", "trans"])
     register_apis = scan_cfg.get("register_apis", [])
     extensions = scan_cfg.get("extensions")
     extra_args = cfg.get("extract", {}).get("extra_args")

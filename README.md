@@ -60,9 +60,9 @@ navmap refresh --src /path/to/src \
 # 产物质检报告（ERROR/WARN/INFO 分级；--src 开启孤儿 handler 与覆盖率检查）
 navmap report --out .navmap/out/ --src /path/to/src
 
-# 名单扩充候选（人审后入配置，不自动改配置）
-navmap suggest-apis  --src /path/to/src --compdb compile_commands.json  # 注册 API
-navmap suggest-vars  --src /path/to/src --top 20                        # 全局变量
+# 名单扩充候选（人审后入配置，不自动改配置；--out 归档 markdown 供人审）
+navmap suggest-apis  --src /path/to/src --compdb compile_commands.json --out suggest-apis.md
+navmap suggest-vars  --src /path/to/src --top 20 --out suggest-vars.md
 ```
 
 产物（同源生成，JSON 机器查询 + 同名 `.md` prompt 注入）：
@@ -188,6 +188,10 @@ incdec / addr 保守记写 / 其余为读），写者全量列出、读者按
 ```bash
 .venv/bin/python -m pytest tests/ -q
 ```
+
+CI（`.github/workflows/ci.yml`）三层：fixture 单测 → u-boot v2026.07 全量
+提取回归（表数/表项/USR 完整性/refresh 短路断言）→ AetherStack master
+提取回归（构建目录污染断言 + suggest-apis 冒烟）。
 
 fixture `tests/fixtures/mini_ims/` 覆盖：五种分发表形态（普通宏表/乱序指定
 初始化/X-Macro/#ifdef 表项/cast 与 & 形式 handler）、状态机表（普通行/

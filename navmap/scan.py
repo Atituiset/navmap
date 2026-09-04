@@ -9,7 +9,9 @@ from __future__ import annotations
 import fnmatch
 import os
 import re
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, field
+from functools import partial
 from pathlib import Path
 
 # 函数指针成员/typedef：`void (*handler)(...)`、`int (*cb)()` 等
@@ -18,12 +20,13 @@ _FUNC_PTR_RE = re.compile(r"\(\s*\*\s*\w+\s*\)\s*\(")
 # 默认排除目录（支持 fnmatch 通配）：版本控制、依赖、构建产物、工具自身、第三方
 DEFAULT_EXCLUDE_DIRS: tuple[str, ...] = (
     ".git", "node_modules", ".venv", "vendor", "_deps", "build", "build-*",
-    ".navmap-tool", ".navmap", ".navmap-out", ".codegraph",
+    "build-*-*", ".navmap-tool", ".navmap", ".navmap-out", ".codegraph",
     "third_party", "third-party", "external", "googletest", "gtest", "gmock",
 )
 
 
-def _match_exclude(dirname: str, patterns: tuple[str, ...]) -> bool:
+def match_exclude(dirname: str, patterns: tuple[str, ...]) -> bool:
+    """fnmatch 通配的目录名排除判定（globalvar/suggest 等遍历器共用）。"""
     return any(fnmatch.fnmatch(dirname, pat) for pat in patterns)
 
 
@@ -76,27 +79,53 @@ def match_file(
     return reasons
 
 
+def _match_to_candidate(
+    path: str | Path,
+    array_re: re.Pattern,
+    api_res: list[tuple[str, re.Pattern]],
+) -> Candidate | None:
+    """单文件粗筛 → 候选（非候选返回 None）。进程池路径要求可 pickle。"""
+    reasons = match_file(path, array_re, api_res)
+    return Candidate(file=str(path), reasons=reasons) if reasons else None
+
+
 def scan(
     src_root: str | Path,
     name_roots: list[str],
     register_apis: list[str] | None = None,
     extensions: list[str] | None = None,
     exclude_dirs: tuple[str, ...] | None = None,
+    *,
+    workers: int = 0,
 ) -> list[Candidate]:
-    """全仓文本粗筛，返回候选文件清单。"""
+    """全仓文本粗筛，返回候选文件清单。
+
+    workers > 0 时按进程池并行分片（CPU 密集的正则匹配），0 = 串行。
+    """
     src_root = Path(src_root)
     exts = tuple(extensions or [".c", ".h"])
     excludes = tuple(exclude_dirs) if exclude_dirs else DEFAULT_EXCLUDE_DIRS
     array_re, api_res = build_matchers(name_roots, register_apis)
 
-    candidates: dict[str, Candidate] = {}
+    paths: list[Path] = []
     for dirpath, dirnames, filenames in os.walk(src_root):
-        dirnames[:] = [d for d in dirnames if not _match_exclude(d, excludes)]
+        dirnames[:] = [d for d in dirnames if not match_exclude(d, excludes)]
         for fn in filenames:
-            if not fn.endswith(exts):
-                continue
-            path = Path(dirpath) / fn
-            reasons = match_file(path, array_re, api_res)
-            if reasons:
-                candidates[str(path)] = Candidate(file=str(path), reasons=reasons)
-    return sorted(candidates.values(), key=lambda c: c.file)
+            if fn.endswith(exts):
+                paths.append(Path(dirpath) / fn)
+
+    # match_file 是模块级函数（picklable），partial 绑定参数后可进进程池
+    _match = partial(_match_to_candidate, array_re=array_re, api_res=api_res)
+
+    candidates: list[Candidate] = []
+    if workers > 1:
+        with ProcessPoolExecutor(max_workers=workers) as ex:
+            for cand in ex.map(_match, paths, chunksize=64):
+                if cand is not None:
+                    candidates.append(cand)
+    else:
+        for p in paths:
+            cand = _match(p)
+            if cand is not None:
+                candidates.append(cand)
+    return sorted(candidates, key=lambda c: c.file)

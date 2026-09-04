@@ -27,12 +27,14 @@ def render_dispatch_md(art: DispatchArtifact) -> str:
             lines.append("（空表）")
             lines.append("")
             continue
-        lines.append("| msg_id | handler | handler 位置 | 编译条件 |")
-        lines.append("|---|---|---|---|")
+        lines.append("| msg_id | 值 | handler | handler 位置 | USR | 编译条件 |")
+        lines.append("|---|---|---|---|---|---|")
         for e in t.entries:
             cond = f"`{e.cond}`" if e.cond else "—"
             loc = f"`{e.handler_loc}`" if e.handler_loc else "?"
-            lines.append(f"| `{e.msg_id}` | `{e.handler}` | {loc} | {cond} |")
+            val = f"`{e.msg_id_value}`" if e.msg_id_value else "—"
+            usr = f"`{e.handler_usr}`" if e.handler_usr else "?"
+            lines.append(f"| `{e.msg_id}` | {val} | `{e.handler}` | {loc} | {usr} | {cond} |")
         lines.append("")
     if art.parse_failures:
         lines.append("## 解析失败文件")
@@ -62,13 +64,14 @@ def render_statemachine_md(art: DispatchArtifact) -> str:
             lines.append("（空表）")
             lines.append("")
             continue
-        lines.append("| state | event | handler | next_state | 编译条件 |")
-        lines.append("|---|---|---|---|---|")
+        lines.append("| state | event | handler | next_state | USR | 编译条件 |")
+        lines.append("|---|---|---|---|---|---|")
         for e in t.entries:
             handler = f"`{e.handler}`" if e.handler else "—"
             nxt = f"`{e.next_state}`" if e.next_state else "—"
             cond = f"`{e.cond}`" if e.cond else "—"
-            lines.append(f"| `{e.state}` | `{e.event}` | {handler} | {nxt} | {cond} |")
+            usr = f"`{e.handler_usr}`" if e.handler_usr else "?"
+            lines.append(f"| `{e.state}` | `{e.event}` | {handler} | {nxt} | {usr} | {cond} |")
         lines.append("")
     if art.parse_failures:
         lines.append("## 解析失败文件")

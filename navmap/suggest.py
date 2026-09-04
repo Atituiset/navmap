@@ -20,9 +20,9 @@ from pathlib import Path
 
 from .compdb import CompilationDB
 from .extract.base import TUExtractor
+from .scan import DEFAULT_EXCLUDE_DIRS, match_exclude as _match_exclude
 
 _DEFAULT_EXTS = (".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".hh")
-_EXCLUDE_DIRS = (".git", "node_modules", ".venv", "vendor", "build")
 
 # 注册味命名的调用点粗筛（误报允许，AST 会过滤）
 _REGISTERISH_RE = re.compile(
@@ -34,7 +34,8 @@ _EXTERN_RE = re.compile(
 
 def _walk_sources(src: Path, exts: tuple[str, ...]):
     for dirpath, dirnames, filenames in os.walk(src):
-        dirnames[:] = [d for d in dirnames if d not in _EXCLUDE_DIRS]
+        dirnames[:] = [d for d in dirnames
+                       if not _match_exclude(d, DEFAULT_EXCLUDE_DIRS)]
         for fn in filenames:
             if fn.endswith(exts):
                 yield Path(dirpath) / fn

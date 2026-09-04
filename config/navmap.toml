@@ -11,7 +11,7 @@ path = ""
 name_roots = ["table", "tbl", "disp", "map", "hdlr", "state", "trans"]
 # 粗筛排除目录（fnmatch 通配）：依赖/构建产物/工具自身/第三方一律不进候选
 exclude_dirs = [".git", "node_modules", ".venv", "vendor", "_deps", "build", "build-*",
-                ".navmap-tool", ".navmap", ".navmap-out", ".codegraph",
+                "build-*-*", ".navmap-tool", ".navmap", ".navmap-out", ".codegraph",
                 "third_party", "third-party", "external", "googletest", "gtest", "gmock"]
 # 注册式分发 API 种子名单（首版人工配 10~20 个，M3 启用）
 register_apis = ["RegisterHandler", "MsgReg", "RegisterMsgHandler", "MsgRegister"]

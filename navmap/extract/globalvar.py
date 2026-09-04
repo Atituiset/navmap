@@ -22,13 +22,11 @@ from pathlib import Path
 
 from ..compdb import CompilationDB
 from ..model import GlobalVar, VarRef
+from ..scan import DEFAULT_EXCLUDE_DIRS, match_exclude as _match_exclude
 from .base import TUExtractor
 
 #: 文本粗筛默认扩展名
 _DEFAULT_EXTS = [".c", ".cc", ".cpp", ".cxx", ".h", ".hpp"]
-
-#: os.walk 时排除的目录
-_EXCLUDE_DIRS = {".git", "node_modules", ".venv", "vendor", "build"}
 
 #: 读/写分类时沿父链向上穿过的透传表达式
 _PASS_THROUGH = (
@@ -72,7 +70,8 @@ class GlobalvarExtractor(TUExtractor):
         hits: dict[str, set[str]] = {v: set() for v in self.variables}
         exts = tuple(self._extensions)
         for dirpath, dirnames, filenames in os.walk(self.src_root):
-            dirnames[:] = [d for d in dirnames if d not in _EXCLUDE_DIRS]
+            dirnames[:] = [d for d in dirnames
+                           if not _match_exclude(d, DEFAULT_EXCLUDE_DIRS)]
             for fn in filenames:
                 if not fn.endswith(exts):
                     continue

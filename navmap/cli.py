@@ -44,6 +44,7 @@ def cmd_extract(args: argparse.Namespace) -> int:
         register_apis=scan_cfg.get("register_apis", []),
         extensions=scan_cfg.get("extensions"),
         exclude_dirs=tuple(scan_cfg.get("exclude_dirs") or ()) or None,
+        workers=args.workers or 0,
     )
     print(f"[navmap] 粗筛候选文件: {len(candidates)}", file=sys.stderr)
 
@@ -201,15 +202,19 @@ def cmd_suggest_apis(args: argparse.Namespace) -> int:
         extra_args=cfg.get("extract", {}).get("extra_args"),
         known_apis=known,
     )
-    print("# 注册 API 候选（人审后拷入 [scan] register_apis）")
-    print()
-    print("| API | 不同 handler 数 | 调用点数 | 状态 |")
-    print("|---|---|---|---|")
+    lines = ["# 注册 API 候选（人审后拷入 [scan] register_apis）", ""]
+    lines.append("| API | 不同 handler 数 | 调用点数 | 状态 |")
+    lines.append("|---|---|---|---|")
     for s in sug:
         mark = "已入名单" if s.api in known else "候选"
-        print(f"| `{s.api}` | {len(s.distinct_handlers)} | {s.call_sites} | {mark} |")
+        lines.append(f"| `{s.api}` | {len(s.distinct_handlers)} | {s.call_sites} | {mark} |")
+    report = "\n".join(lines)
+    print(report)
+    if args.out:
+        Path(args.out).write_text(report + "\n")
+        print(f"[navmap] 已写出: {args.out}", file=sys.stderr)
     if failures:
-        print(f"\n解析失败 {len(failures)} 个文件（详见 stderr 不列）",
+        print(f"解析失败 {len(failures)} 个文件（详见 stderr 不列）",
               file=sys.stderr)
     return 0
 
@@ -223,13 +228,17 @@ def cmd_suggest_vars(args: argparse.Namespace) -> int:
         args.src, top=args.top,
         extensions=cfg.get("scan", {}).get("extensions"))
     known = set(cfg.get("globalvar", {}).get("variables", []))
-    print("# 全局变量候选 Top-%d（人审后拷入 [globalvar] variables）" % args.top)
-    print()
-    print("| 变量 | 全仓引用次数 | 声明位置 | 状态 |")
-    print("|---|---|---|---|")
+    lines = ["# 全局变量候选 Top-%d（人审后拷入 [globalvar] variables）" % args.top, ""]
+    lines.append("| 变量 | 全仓引用次数 | 声明位置 | 状态 |")
+    lines.append("|---|---|---|---|")
     for s in sug:
         mark = "已入名单" if s.name in known else "候选"
-        print(f"| `{s.name}` | {s.refs} | `{s.decl_file}` | {mark} |")
+        lines.append(f"| `{s.name}` | {s.refs} | `{s.decl_file}` | {mark} |")
+    report = "\n".join(lines)
+    print(report)
+    if args.out:
+        Path(args.out).write_text(report + "\n")
+        print(f"[navmap] 已写出: {args.out}", file=sys.stderr)
     return 0
 
 
@@ -244,6 +253,8 @@ def main(argv: list[str] | None = None) -> int:
     pe.add_argument("--out", required=True, help="产物输出目录")
     pe.add_argument("--subsystem", default="default", help="子系统名（产物文件名后缀）")
     pe.add_argument("--config", default=None, help="navmap.toml 路径（默认取项目 config/）")
+    pe.add_argument("--workers", type=int, default=0,
+                    help="粗筛并行进程数（0 = 串行；默认 0）")
     pe.set_defaults(fn=cmd_extract)
 
     pr = sub.add_parser("report", help="产物质检报告（ERROR/WARN/INFO 分级）")
@@ -264,12 +275,14 @@ def main(argv: list[str] | None = None) -> int:
     pa.add_argument("--src", required=True, help="源码根目录")
     pa.add_argument("--compdb", required=True, help="compile_commands.json 路径")
     pa.add_argument("--threshold", type=int, default=5, help="不同 handler 数阈值（默认 5）")
+    pa.add_argument("--out", default=None, help="候选清单输出文件（markdown；缺省只打印）")
     pa.add_argument("--config", default=None, help="navmap.toml 路径（默认取项目 config/）")
     pa.set_defaults(fn=cmd_suggest_apis)
 
     pv = sub.add_parser("suggest-vars", help="全局变量 Top-N 候选（人审后入 [globalvar] variables）")
     pv.add_argument("--src", required=True, help="源码根目录")
     pv.add_argument("--top", type=int, default=20, help="取引用次数前 N（默认 20）")
+    pv.add_argument("--out", default=None, help="候选清单输出文件（markdown；缺省只打印）")
     pv.add_argument("--config", default=None, help="navmap.toml 路径（默认取项目 config/）")
     pv.set_defaults(fn=cmd_suggest_vars)
 

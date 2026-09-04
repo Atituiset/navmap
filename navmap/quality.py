@@ -21,8 +21,11 @@ ERROR, WARN, INFO = "ERROR", "WARN", "INFO"
 # 孤儿 handler 命名启发式（§7）
 _ORPHAN_NAME_RE = re.compile(
     r"^\s*(?:static\s+)?[\w\*]+\s+(handle_\w+|\w+_hdlr)\s*\([^;]*$")
-# 消息枚举来源：#define MSG_x 0x123 / enum 成员
-_DEFINE_RE = re.compile(r"^\s*#\s*define\s+(\w+)\s+(?:0x[0-9a-fA-F]+|\d+)")
+# 消息枚举来源：#define MSG_x <常量表达式> / enum 成员
+# 常量表达式右值允许宏/运算/数字（0x3EC、(1<<2)、MSG_BASE+5 等），漏抓比误抓要紧；
+# 函数宏（#define FOO(x) ...）右值以 "(" 开头会被下面的负向断言排除
+_DEFINE_RE = re.compile(
+    r"^\s*#\s*define\s+(\w+)(?!\()\s+[^\s\\]")
 _ENUM_MEMBER_RE = re.compile(r"^\s*(\w+)\s*(?:=\s*(?:0x[0-9a-fA-F]+|\d+))?\s*,?\s*$")
 
 

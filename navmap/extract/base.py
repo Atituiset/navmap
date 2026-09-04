@@ -25,35 +25,54 @@ _ENDIF_RE = re.compile(r"^\s*#\s*endif\b")
 
 
 def cond_map(lines: list[str]) -> dict[int, str]:
-    """行号 → 该行生效的条件编译表达式（源码拼写）。简单文本回溯，不展开宏。"""
-    stack: list[str] = []
+    """行号 → 该行生效的条件编译表达式（源码拼写）。简单文本回溯，不展开宏。
+
+    #elif/#else 分支按排斥语义记录：后续分支条件为
+    `!(前面分支条件) && (本分支条件)`（保守近似，嵌套 #else 只取上一层）。
+    """
+    # 栈元素：(当前分支条件, 已出现过的兄弟分支条件列表)
+    stack: list[tuple[str, list[str]]] = []
     out: dict[int, str] = {}
+
+    def _active(stack_snapshot) -> str | None:
+        parts = [cond for cond, _ in stack_snapshot if cond]
+        return " && ".join(parts) if parts else None
+
     for i, line in enumerate(lines, 1):
         m = _IFDEF_RE.match(line)
         if m:
-            stack.append(m.group(1))
+            stack.append((m.group(1), [m.group(1)]))
             continue
         m = _IFNDEF_RE.match(line)
         if m:
-            stack.append("!" + m.group(1))
+            cond = "!" + m.group(1)
+            stack.append((cond, [cond]))
             continue
         m = _IF_RE.match(line)
         if m:
-            stack.append(m.group(1).strip())
+            cond = m.group(1).strip()
+            stack.append((cond, [cond]))
             continue
         m = _ELIF_RE.match(line)
         if m and stack:
-            stack[-1] = m.group(1).strip()
+            cond, siblings = stack[-1]
+            # 本分支生效 = 前面分支都不成立 && 本条件成立
+            not_prev = " && ".join(f"!({s})" for s in siblings)
+            cur = m.group(1).strip()
+            stack[-1] = (f"{not_prev} && {cur}", siblings + [cur])
             continue
         if _ELSE_RE.match(line) and stack:
-            stack[-1] = f"!({stack[-1]})"
+            cond, siblings = stack[-1]
+            not_prev = " && ".join(f"!({s})" for s in siblings)
+            stack[-1] = (not_prev, siblings + [None])
             continue
         if _ENDIF_RE.match(line):
             if stack:
                 stack.pop()
             continue
-        if stack:
-            out[i] = " && ".join(stack)
+        cond = _active(stack)
+        if cond:
+            out[i] = cond
     return out
 
 
