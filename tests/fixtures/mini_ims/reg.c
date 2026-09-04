@@ -26,13 +26,14 @@ typedef struct {
     ModDesc mod;   /* &m.mod.member 嵌套形态 */
 } ModWrap;
 
-/* pjsip 实际形态：mod_evsub 非 const。const + 全常量初始化在 libclang 20
- * 下不生成 init cursor（已知限制，见 README）。 */
+/* pjsip 实际形态：mod_evsub 非 const、按位初始化（成员顺序 = 声明顺序）。
+ * 注：libclang 20 对"全指定初始化器 + 全 fnptr 成员"的这种组合不生成
+ * init cursor（CI 实测），按位形态稳定且更贴近 pjsip 真实代码。 */
 static ModDesc g_modDesc = {
-    .name = "ims-mod",
-    .on_rx_request = sess_handle_invite,
-    .on_rx_response = sess_handle_bye,
-    .on_tx_request = NULL,
+    "ims-mod",
+    sess_handle_invite,
+    sess_handle_bye,
+    NULL,
 };
 
 static const ModWrap g_modWrap = {
