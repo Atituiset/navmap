@@ -52,23 +52,6 @@ jobs:
           tables, failures = ex.extract_files([c.file for c in cands])
           print("TABLES:", [(t.name, len(t.entries)) for t in tables])
           print("FAILURES:", failures)
-          import clang.cindex as ci
-          tu, _ = ex._parse(str(fixture/"reg.c"))
-          for cur in tu.cursor.get_children():
-              if cur.kind == ci.CursorKind.VAR_DECL and cur.spelling in ("mod_desc", "g_modWrap"):
-                  kids = [(c.kind, c.spelling[:20], len(list(c.get_children()))) for c in cur.get_children()]
-                  print("VAR:", cur.spelling, "children:", kids)
-                  for c in cur.get_children():
-                      if c.kind == ci.CursorKind.UNEXPOSED_EXPR:
-                          print("  unexposed children:", [(s.kind, s.spelling[:20]) for s in c.get_children()])
-          tu2, _ = ex._parse(str(fixture/"ops_struct.c"))
-          for cur in tu2.cursor.get_children():
-              if cur.kind == ci.CursorKind.VAR_DECL and cur.spelling in ("g_opsProtoFull", "g_opsProtoDesignated"):
-                  kids = [(c.kind, c.spelling[:20], len(list(c.get_children()))) for c in cur.get_children()]
-                  print("VAR:", cur.spelling, "children:", kids)
-                  for c in cur.get_children():
-                      if c.kind == ci.CursorKind.UNEXPOSED_EXPR:
-                          print("  unexposed children:", [(s.kind, s.spelling[:20]) for s in c.get_children()])
           PYEOF
       - name: pytest
         run: .venv/bin/python -m pytest tests/ -q || (.venv/bin/python /tmp/dump_reg.py 2>&1 | tail -40; exit 1)
