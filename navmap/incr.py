@@ -213,6 +213,14 @@ def refresh(
             rt, rf = reg_ex.extract_files(abs_files)
             new_tables.extend(rt)
             failures.extend(rf)
+        if cfg.get("extract", {}).get("ops_structs"):
+            from .extract.opsstruct import OpsStructExtractor
+
+            ops_ex = OpsStructExtractor(compdb, src_root=src,
+                                         extra_args=extra_args)
+            ot, of = ops_ex.extract_files(abs_files)
+            new_tables.extend(ot)
+            failures.extend(of)
         sm_ex = StatemachineExtractor(
             compdb, src_root=src,
             state_fields=sm_cfg.get("state_fields", ["state", "cur_state", "from"]),

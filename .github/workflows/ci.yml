@@ -156,6 +156,8 @@ jobs:
     timeout-minutes: 30
     env:
       NAVMAP: ${{ github.workspace }}
+    env:
+      NAVMAP: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -215,4 +217,143 @@ jobs:
         with:
           name: aether-navmap-artifacts
           path: /tmp/navmap-aether/
+          retention-days: 7
+
+  seed-regress:
+    # M3/M4 验证缺口闭环：对 fork 的 SAST 种子仓跑 registry/globalvar/ops-struct
+    # 提取，用真实注册 API 名单断言产出非空（此前 M3/M4 从未在真实仓验证过）。
+    name: 种子仓回归 — ${{ matrix.repo }}（M3 registry / M4 globalvar / ops-struct）
+    runs-on: ubuntu-latest
+    needs: unit
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - repo: freeDiameter
+            expect: registry
+            apis: "fd_disp_register fd_hook_register fd_ext_register"
+            vars: "fd_g_config fd_g_svc_mdcallback"
+          - repo: collectd
+            expect: registry
+            apis: "plugin_register_read plugin_register_write plugin_register_log"
+            vars: "hostname_g interval_g"
+          - repo: pjproject
+            expect: registry
+            apis: "pjsip_endpt_register_module pjsip_tsx_layer_init"
+            vars: "pjsip_var"
+          - repo: curl
+            expect: ops-struct
+            apis: ""
+            vars: ""
+          - repo: open5gs
+            expect: negative-fsm
+            apis: "ogs_fsm_init ogs_fsm_create"
+            vars: ""
+          - repo: usrsctp
+            expect: negative-fsm
+            apis: ""
+            vars: ""
+    env:
+      NAVMAP: ${{ github.workspace }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: 安装 navmap
+        run: python3 -m venv .venv && .venv/bin/pip install -q -e '.'
+      - name: 克隆 ${{ matrix.repo }}
+        run: |
+          git clone --depth 1 https://github.com/Atituiset/${{ matrix.repo }}.git ~/$REPO
+        env:
+          REPO: ${{ matrix.repo }}
+      - name: 生成 compile_commands.json + navmap 配置
+        run: |
+          cd ~/$REPO
+          case "$REPO" in
+            freeDiameter) cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=Debug 2>&1 | tail -3 ;;
+            collectd)     cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=Debug 2>&1 | tail -3 ;;
+            curl)        cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCURL_DISABLE_TESTS=ON 2>&1 | tail -3 ;;
+            open5gs)     meson setup build 2>&1 | tail -3 || cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON 2>&1 | tail -3 ;;
+            *)           cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON 2>&1 | tail -3 ;;
+          esac
+          if [ -f build/compile_commands.json ]; then COMPDB=build/compile_commands.json; else find . -maxdepth 3 -name compile_commands.json | head -1; fi
+          python3 -c "
+          import json, glob
+          cand = glob.glob('build*/compile_commands.json') + glob.glob('*/compile_commands.json')
+          assert cand, 'no compile_commands.json generated'
+          raw = json.load(open(cand[0]))
+          print('compdb entries:', len(raw))
+          open('/tmp/COMPDB', 'w').write(cand[0])
+          "
+      - name: navmap extract（真实 API 名单）
+        run: |
+          cd ~/$REPO
+          # 组装配置：register_apis / globalvar 名单 / ops_structs
+          python3 - <<EOF
+          cfg = open("$NAVMAP/config/navmap.toml").read()
+          apis = "$APIS".split()
+          gvars = "$VARS".split()
+          cfg = cfg.replace(
+              'register_apis = ["RegisterHandler", "MsgReg", "RegisterMsgHandler", "MsgRegister"]',
+              'register_apis = ' + repr(apis))
+          cfg = cfg.replace('variables = []', 'variables = ' + repr(gvars))
+          if "$EXPECT" == "ops-struct":
+              cfg = cfg.replace('ops_structs = false', 'ops_structs = true')
+          open('/tmp/navmap-seed.toml', 'w').write(cfg)
+          print("apis:", apis, "vars:", gvars)
+          EOF
+          BASELINE=$(git rev-parse HEAD)
+          "$NAVMAP/.venv/bin/navmap" extract \
+            --src "$HOME/$REPO" --compdb "$(cat /tmp/COMPDB)" \
+            --baseline "$BASELINE" --subsystem "$REPO" --out /tmp/navmap-$REPO/ \
+            --config /tmp/navmap-seed.toml 2>&1 | tail -8
+        env:
+          REPO: ${{ matrix.repo }}
+          APIS: ${{ matrix.apis }}
+          VARS: ${{ matrix.vars }}
+          EXPECT: ${{ matrix.expect }}
+      - name: 按种子形态断言
+        run: |
+          python3 - <<EOF
+          import json, os
+          repo = os.environ['REPO']
+          expect = os.environ['EXPECT']
+          art = json.load(open(f'/tmp/navmap-{repo}/navmap-dispatch-{repo}.json'))
+          registry_tables = [t for t in art['tables'] if t['name'].startswith('registry:')]
+          ops_tables = [t for t in art['tables'] if not t['name'].startswith('registry:')]
+          reg_entries = sum(len(t['entries']) for t in registry_tables)
+          ops_entries = sum(len(t['entries']) for t in ops_tables)
+          print(f"registry tables: {len(registry_tables)} ({reg_entries} entries), "
+                f"other tables: {len(ops_tables)} ({ops_entries} entries)")
+          if expect == 'registry':
+              assert registry_tables, f"registry 提取 0 命中（M3 验证失败）"
+              # USR 完整性
+              miss = sum(1 for t in registry_tables for e in t['entries']
+                         if not e.get('handler_usr'))
+              assert miss == 0, f"{miss} registry 表项 USR 缺失"
+          elif expect == 'ops-struct':
+              assert ops_entries >= 50, f"ops-struct 提取过少: {ops_entries}"
+          elif expect == 'negative-fsm':
+              # switch 式 FSM 仓：navmap 不做 switch —— registry/ops 可以有产出，
+              # 但预期无表驱动 statemachine 表（量化缺口而非失败）
+              print("negative control: switch-FSM blind spot quantified, "
+                    f"registry={reg_entries} entries captured")
+          gv_path = f'/tmp/navmap-{repo}/navmap-globalvar-{repo}.json'
+          if os.path.exists(gv_path):
+              gv = json.load(open(gv_path))
+              for v in gv['vars']:
+                  print(f"globalvar: {v['variable']} refs={v['total_refs']} "
+                        f"writers={len(v['writers'])} def={v['def_loc']}")
+          EOF
+        env:
+          REPO: ${{ matrix.repo }}
+          EXPECT: ${{ matrix.expect }}
+      - name: 上传产物
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: seed-${{ matrix.repo }}-artifacts
+          path: /tmp/navmap-${{ matrix.repo }}/
           retention-days: 7

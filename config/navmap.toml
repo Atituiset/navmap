@@ -24,6 +24,10 @@ handler_fields = ["handler", "func", "fp", "pfn", "callback", "hdlr", "proc", "f
 msgid_fields = ["msg_id", "msgid", "id", "msg", "event", "cmd", "code", "type", "msgno"]
 
 [extract]
+# 单 ops-struct 分发提取（curl Curl_protocol / pjsip mod_tsx_layer /
+# Linux file_operations 形态：非数组结构体的函数指针成员初始化器）。
+# true 时 ops-struct 虚拟表合入 dispatch 产物（msg_id = 成员名）。
+ops_structs = false
 # 追加给每次 libclang 解析的额外参数（toolchain 头路径逃生口，同 clangd
 # --query-driver 思路）。vendored conda libclang 无 resource dir 时例：
 # extra_args = ["-isystem", "/usr/lib/gcc/x86_64-linux-gnu/13/include"]

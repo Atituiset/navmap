@@ -75,6 +75,17 @@ def cmd_extract(args: argparse.Namespace) -> int:
         tables.extend(rt)
         failures.extend(rf)
 
+    # [3b'] 单 ops-struct 分发（curl Curl_protocol / Linux file_operations 形态；
+    # 默认关闭，配置 [extract] ops_structs = true 启用，虚拟表合入 dispatch 产物）
+    if cfg.get("extract", {}).get("ops_structs"):
+        from .extract.opsstruct import OpsStructExtractor
+
+        ops_ex = OpsStructExtractor(compdb, src_root=args.src,
+                                     extra_args=extra_args)
+        ot, of = ops_ex.extract_files([c.file for c in candidates])
+        tables.extend(ot)
+        failures.extend(of)
+
     # [3c] 状态机表（字段映射命中的表从 dispatch 产物剔除，归状态机产物）
     sm_cfg = cfg.get("statemachine", {})
     from .extract.statemachine import StatemachineExtractor

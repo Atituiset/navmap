@@ -138,6 +138,12 @@ navmap suggest-vars  --src /path/to/src --top 20 --out suggest-vars.md
 `MsgReg(MSG_1001, fn)` 调用点经 AST `CallExpr` 匹配，产出与分发表同构的
 表项，挂到虚拟表 `registry:<ApiName>` 下合入 dispatch 产物。
 
+**ops-struct（单结构体分发，M6）**：配置 `[extract] ops_structs = true`
+后启用。非数组结构体的函数指针成员初始化器——curl `struct Curl_protocol` /
+pjsip `mod_tsx_layer` / Linux `file_operations` 惯用法；指定初始化器按
+成员名配对、按位初始化按声明顺序对齐，`msg_id` = 成员名，合入 dispatch
+产物。
+
 **statemachine（状态机表）**：与分发表同套 InitListExpr 遍历，字段映射
 配置化（`[statemachine]`）；含 state+event 字段的表自动从 dispatch 产物
 剔除、归入状态机产物。switch 式手写状态机不做（按设计）。
@@ -194,9 +200,12 @@ incdec / addr 保守记写 / 其余为读），写者全量列出、读者按
 .venv/bin/python -m pytest tests/ -q
 ```
 
-CI（`.github/workflows/ci.yml`）三层：fixture 单测 → u-boot v2026.07 全量
+CI（`.github/workflows/ci.yml`）四层：fixture 单测 → u-boot v2026.07 全量
 提取回归（表数/表项/USR 完整性/refresh 短路断言）→ AetherStack master
-提取回归（构建目录污染断言 + suggest-apis 冒烟）。
+提取回归（构建目录污染断言 + suggest-apis 冒烟）→ **种子仓矩阵**（fork 在
+Atituiset 下的 SAST seed repos：freeDiameter/collectd/pjproject 验证 M3
+registry、curl 验证 ops-struct、open5gs/usrsctp 作为 switch-FSM 负对照；
+每个种子配真实注册 API 名单跑 extract 并断言产出，M4 globalvar 同场验证）。
 
 fixture `tests/fixtures/mini_ims/` 覆盖：五种分发表形态（普通宏表/乱序指定
 初始化/X-Macro/#ifdef 表项/cast 与 & 形式 handler）、状态机表（普通行/

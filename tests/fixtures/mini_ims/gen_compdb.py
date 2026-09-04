@@ -6,7 +6,7 @@ import os
 HERE = os.path.dirname(os.path.abspath(__file__))
 
 sources = ["disp.c", "disp2.c", "xmacro.c", "handlers.c", "oam_user.c", "sm.c",
-           "reg.c", "gvars.c", "gvars_user.c", "nested.c", "bare_fnptr.c", "matrix_fnptr.c", "macro_call.c"]
+           "reg.c", "gvars.c", "gvars_user.c", "nested.c", "bare_fnptr.c", "matrix_fnptr.c", "macro_call.c", "ops_struct.c"]
 entries = [
     {
         "directory": HERE,
