@@ -11,6 +11,7 @@ import ctypes
 _ready = False
 
 _CXEVAL_INT = 1
+_CXEVAL_STR = 3
 
 
 def _ensure() -> object:
@@ -25,6 +26,8 @@ def _ensure() -> object:
         lib.clang_EvalResult_getKind.restype = ctypes.c_int
         lib.clang_EvalResult_getAsLongLong.argtypes = [ctypes.c_void_p]
         lib.clang_EvalResult_getAsLongLong.restype = ctypes.c_longlong
+        lib.clang_EvalResult_getAsStr.argtypes = [ctypes.c_void_p]
+        lib.clang_EvalResult_getAsStr.restype = ctypes.c_char_p
         lib.clang_EvalResult_dispose.argtypes = [ctypes.c_void_p]
         lib.clang_EvalResult_dispose.restype = None
         _ready = True
@@ -65,4 +68,32 @@ def eval_int(cursor) -> str | None:
         finally:
             lib.clang_EvalResult_dispose(res)
     except Exception:  # 求值失败不阻塞提取
+        return None
+
+
+def eval_str(cursor) -> str | None:
+    """字符串字面量表达式求值（剥引号）。u-boot U_BOOT_SUBCMD_MKENT 的
+    #name 字符串化字段在 extent 塌缩时读不到文本，但求值仍可得其值。
+    同 eval_int 走 kind 白名单防 segfault。"""
+    from clang.cindex import CursorKind
+
+    _SAFE = {
+        CursorKind.STRING_LITERAL,
+        CursorKind.UNEXPOSED_EXPR,
+    }
+    if cursor.kind not in _SAFE:
+        return None
+    try:
+        lib = _ensure()
+        res = lib.clang_Cursor_Evaluate(cursor)
+        if not res:
+            return None
+        try:
+            if lib.clang_EvalResult_getKind(res) != _CXEVAL_STR:
+                return None
+            raw = lib.clang_EvalResult_getAsStr(res)
+            return raw.decode(errors="replace") if raw else None
+        finally:
+            lib.clang_EvalResult_dispose(res)
+    except Exception:
         return None

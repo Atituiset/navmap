@@ -212,6 +212,32 @@ class TUExtractor:
             return ""
         return data[ext.start.offset : ext.end.offset].decode(errors="replace").strip()
 
+    def _decl_text(self, cursor) -> str:
+        """声明语句源码文本（从声明起始行读到 `};` 收尾行）。
+
+        宏展开使 extent 塌缩为零宽时（u-boot U_BOOT_CMD_WITH_SUBCMDS
+        实测），libclang 对该声明的 extent 读取为空——从 location 起按
+        行读取到最后一个 `};` 行是最后兜底。用法字符串内可能含括号，
+        不做括号配对。"""
+        ext = cursor.extent
+        if ext.start.file is not None:
+            text = self._extent_text(cursor)
+            if text:
+                return text
+        loc = cursor.location
+        if loc.file is None:
+            return ""
+        try:
+            lines = self._read(loc.file.name).decode(errors="replace").splitlines()
+        except OSError:
+            return ""
+        out: list[str] = []
+        for i in range(loc.line - 1, min(len(lines), loc.line + 400)):
+            out.append(lines[i])
+            if lines[i].rstrip().endswith("};"):
+                break
+        return "\n".join(out)
+
     def _cond_at(self, cursor) -> str | None:
         ext = cursor.extent
         if ext.start.file is None:

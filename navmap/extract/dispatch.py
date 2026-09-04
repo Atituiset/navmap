@@ -94,8 +94,12 @@ class DispatchExtractor(TUExtractor):
                 if e is not None:
                     table.entries.append(e)
         if not bare_fnptr:
-            for entry_cur in self._iter_struct_entries(init, dims - 1):
-                e = self._extract_entry(entry_cur)
+            # 表项兜底用：整个 VarDecl 的源码文本（宏展开塌缩 extent 时，
+            # 从宏调用实参文本按表项序号配对——见 _extract_entry）
+            var_text = self._decl_text(var)
+            for entry_idx, entry_cur in enumerate(
+                    self._iter_struct_entries(init, dims - 1)):
+                e = self._extract_entry(entry_cur, var_text, entry_idx)
                 if e is not None:
                     table.entries.append(e)
         return table  # 空表也保留（覆盖率统计用）
@@ -154,7 +158,7 @@ class DispatchExtractor(TUExtractor):
             cond=self._cond_at(child),
         )
 
-    def _extract_entry(self, entry_cur) -> Entry | None:
+    def _extract_entry(self, entry_cur, var_text: str = "", entry_idx: int = -1) -> Entry | None:
         handler = None
         handler_loc = None
         handler_usr = None
@@ -170,8 +174,9 @@ class DispatchExtractor(TUExtractor):
                     handler_loc = f"{self._relpath(rloc.file.name)}:{rloc.line}"
                 handler_usr = ref.get_usr()
             else:
-                text = self._extent_text(child)
-                if text:  # 跳过隐式零初始化（无源码拼写）
+                # 跳过隐式零初始化（无源码拼写且非字面量）；宏展开塌缩
+                # extent 的字段也保留（eval_str 仍可求字符串值）
+                if self._extent_text(child) or self._is_literal_like(child):
                     scalars.append(child)
 
         if handler is None:
@@ -180,27 +185,36 @@ class DispatchExtractor(TUExtractor):
         msg_id, msg_id_value = "", None
         if scalars:
             msg_id = self._norm_msg_id(self._extent_text(scalars[0]))
+            if not msg_id:
+                # 宏展开塌缩 extent 的字符串字段（u-boot #name 字符串化）：
+                # 求值兜底
+                msg_id = self._eval_str(scalars[0]) or ""
             msg_id_value = self._eval(scalars[0])
         if not msg_id:
             # X-Macro 场景：子节点 extent 塌缩（实参 token 无独立 range），
-            # 且 libclang 无法对非主文件范围分词——直接对表项 extent 的源码
-            # 文本做兜底分词。覆盖两类形态：
-            #  1. 宏调用形态 U_BOOT_SUBCMD_MKENT(info, 2, 1, do_blkmap_common)
-            #     → 首实参（剥引号）为 msg_id（u-boot 子命令名）；
+            # 且 libclang 无法对非主文件范围分词。按优先级兜底：
+            #  1. 表项 extent 文本：宏调用形态 U_BOOT_SUBCMD_MKENT(info, 2, 1,
+            #     do_blkmap_common) → 首实参（剥引号）为 msg_id；
             #  2. 展开形态 {.name = "info", .cmd = fn} / { "info", ... }
-            #     → 取第一个字符串字面量或非 handler 标识符。
+            #     → 第一个字符串字面量或非 handler 标识符；
+            #  3. 全塌缩（u-boot blkmap 实测：9 表项 extent 全指宏调用首行且
+            #     读取为空串）→ 用整表 VarDecl 源码文本，按表项序号配对第 N 个
+            #     实参组的首实参。
             text = self._extent_text(entry_cur)
-            msg_id = self._norm_msg_id(text)
-            if msg_id == text:  # 不是宏调用形态
-                m = re.search(r'"([^"]+)"', text)
-                if m:
-                    msg_id = m.group(1)
-                else:
-                    for m in re.finditer(r"([A-Za-z_]\w*)\s*(\()?", text):
-                        ident, paren = m.group(1), m.group(2)
-                        if not paren and ident != handler:
-                            msg_id = ident
-                            break
+            if text:
+                msg_id = self._norm_msg_id(text)
+                if msg_id == text:  # 不是宏调用形态
+                    m = re.search(r'"([^"]+)"', text)
+                    if m:
+                        msg_id = m.group(1)
+                    else:
+                        for m in re.finditer(r"([A-Za-z_]\w*)\s*(\()?", text):
+                            ident, paren = m.group(1), m.group(2)
+                            if not paren and ident != handler:
+                                msg_id = ident
+                                break
+        if not msg_id and var_text and entry_idx >= 0:
+            msg_id = self._msg_id_from_var_text(var_text, entry_idx, handler)
 
         cond = self._cond_at(entry_cur)
         return Entry(
@@ -212,7 +226,81 @@ class DispatchExtractor(TUExtractor):
             cond=cond,
         )
 
+    def _is_literal_like(self, cursor) -> bool:
+        """无源码拼写但可能有常量值的字段（宏塌缩 extent 的字面量）。"""
+        ci = self._cindex
+        return cursor.kind in (
+            ci.CursorKind.INTEGER_LITERAL,
+            ci.CursorKind.STRING_LITERAL,
+            ci.CursorKind.UNEXPOSED_EXPR,
+            ci.CursorKind.UNARY_OPERATOR,
+            ci.CursorKind.BINARY_OPERATOR,
+        )
+
+    def _eval_str(self, cursor) -> str | None:
+        """字符串字段求值兜底（clangeval.eval_str）。"""
+        try:
+            from .. import clangeval
+        except ImportError:
+            return None
+        return clangeval.eval_str(cursor)
+
     # ---------------- 求值 ----------------
+
+    _CALL_ARG_RE = re.compile(r"([A-Za-z_]\w*)\s*\(")
+
+    @classmethod
+    def _msg_id_from_var_text(cls, var_text: str, entry_idx: int,
+                              handler: str | None) -> str:
+        """extent 全塌缩时的最终兜底：整表 VarDecl 源码文本中，收集
+        括号深度感知的嵌套宏调用（MKENT 形态），第 entry_idx 个的首实参
+        即 msg_id（u-boot blkmap_subcmds 实测形态：每个表项都是
+        U_BOOT_SUBCMD_MKENT(name, maxargs, rep, handler) 宏调用，首实参
+        经 #name 字符串化为子命令名）。"""
+        calls: list[str] = []  # 每个 MKENT 调用的首实参
+        i, n = 0, len(var_text)
+        while i < n:
+            m = cls._CALL_ARG_RE.search(var_text, i)
+            if not m:
+                break
+            start = m.end()  # 实参区起点
+            depth = 1
+            j = start
+            while j < n and depth > 0:
+                c = var_text[j]
+                if c == "(":
+                    depth += 1
+                elif c == ")":
+                    depth -= 1
+                j += 1
+            if depth == 0:  # 完整闭合的调用
+                args_text = var_text[start:j - 1]
+                # 跳过外层包裹（= IDENT(...) 直接是 var_text 全文那种）与
+                # 非表项形态（首实参为空/含分号的语句宏）
+                first_arg = cls._split_args(args_text)
+                if first_arg is not None:
+                    calls.append(first_arg)
+            i = j  # 从闭合处继续扫描（嵌套调用天然跳过）
+        if 0 <= entry_idx < len(calls):
+            arg = calls[entry_idx]
+            if handler is None or arg != handler:
+                return arg.strip().strip('"')
+        return ""
+
+    @staticmethod
+    def _split_args(args_text: str) -> str | None:
+        """顶层逗号切分取首实参；含语句体（{} 或 ;）的调用不算表项。"""
+        if "{" in args_text or ";" in args_text:
+            return None
+        depth = 0
+        for k, c in enumerate(args_text):
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+            elif c == "," and depth == 0:
+                return args_text[:k].strip()
+        return args_text.strip() or None
 
     @staticmethod
     def _norm_msg_id(text: str) -> str:
