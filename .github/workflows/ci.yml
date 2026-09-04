@@ -55,7 +55,7 @@ jobs:
           import clang.cindex as ci
           tu, _ = ex._parse(str(fixture/"reg.c"))
           for cur in tu.cursor.get_children():
-              if cur.kind == ci.CursorKind.VAR_DECL and cur.spelling in ("g_modDesc", "g_modWrap"):
+              if cur.kind == ci.CursorKind.VAR_DECL and cur.spelling in ("mod_desc", "g_modWrap"):
                   kids = [(c.kind, c.spelling[:20], len(list(c.get_children()))) for c in cur.get_children()]
                   print("VAR:", cur.spelling, "children:", kids)
                   for c in cur.get_children():
