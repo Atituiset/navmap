@@ -59,8 +59,11 @@ jobs:
               if ref is not None and ref.spelling in ("ModReg","WrapReg"):
                   print("CALL:", ref.spelling, "args:", len(list(cur.get_arguments())))
                   for a in cur.get_arguments():
+                      tv = ex._struct_target_var(a)
                       print("  arg:", a.kind, repr(ex._extent_text(a))[:60],
-                            "peel:", (r.kind if (r := ex._peel_to_ref(a)) is not None else None))
+                            "target_var:", (tv[0].spelling, tv[1]) if tv else None)
+                      ents = ex._struct_handler_entries(a, "cond")
+                      print("  entries:", [(e.msg_id, e.handler) for e in ents] if ents else None)
           EOF
       - name: pytest
         run: .venv/bin/python -m pytest tests/ -q || (.venv/bin/python /tmp/dump_reg.py 2>&1 | tail -40; exit 1)
