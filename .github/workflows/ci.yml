@@ -62,8 +62,23 @@ jobs:
                       tv = ex._struct_target_var(a)
                       print("  arg:", a.kind, repr(ex._extent_text(a))[:60],
                             "target_var:", (tv[0].spelling, tv[1]) if tv else None)
-                      ents = ex._struct_handler_entries(a, "cond")
-                      print("  entries:", [(e.msg_id, e.handler) for e in ents] if ents else None)
+                      tv2 = tv
+                      if tv2:
+                          target, member_name = tv2
+                          vt = target.type.get_canonical()
+                          print("  var_type:", vt.kind, "const?" , vt.is_const_qualified())
+                          if vt.kind == ex._cindex.TypeKind.RECORD:
+                              d = vt.get_declaration()
+                              print("  fnptr_fields:", ex._funcptr_field_names(d))
+                              init2 = None
+                              for ch in target.get_children():
+                                  if ch.kind == ex._cindex.CursorKind.INIT_LIST_EXPR:
+                                      init2 = ch
+                                      break
+                              print("  has_init:", init2 is not None)
+                              if init2 is not None:
+                                  got = list(ex._iter_fnptr_inits(d, init2))
+                                  print("  iter_fnptr:", [(n, v.kind) for n, v in got])
           EOF
       - name: pytest
         run: .venv/bin/python -m pytest tests/ -q || (.venv/bin/python /tmp/dump_reg.py 2>&1 | tail -40; exit 1)
