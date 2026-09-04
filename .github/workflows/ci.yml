@@ -291,7 +291,7 @@ jobs:
           pip install -q meson ninja
           sudo apt-get update -q && sudo apt-get install -q -y \
             autoconf automake libtool pkg-config bison flex libssl-dev bear \
-            libsctp-dev libtalloc-dev libgnutls28-dev libmongoc-dev libmicrohttpd-dev libgcrypt-dev
+            libsctp-dev libtalloc-dev libgnutls28-dev libmongoc-dev libmicrohttpd-dev libgcrypt-dev libidn-dev libidn2-dev
 
       - name: 生成 compile_commands.json + navmap 配置
         run: |
