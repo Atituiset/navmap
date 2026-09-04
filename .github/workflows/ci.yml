@@ -254,6 +254,7 @@ jobs:
             vars: ""
     env:
       NAVMAP: ${{ github.workspace }}
+      REPO: ${{ matrix.repo }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -262,27 +263,44 @@ jobs:
       - name: 安装 navmap
         run: python3 -m venv .venv && .venv/bin/pip install -q -e '.'
       - name: 克隆 ${{ matrix.repo }}
+        run: git clone --depth 1 https://github.com/Atituiset/${{ matrix.repo }}.git ~/$REPO
+      - name: 安装构建工具（open5gs 需要 meson/ninja；collectd 需要 autotools）
+        if: matrix.repo == 'open5gs' || matrix.repo == 'collectd'
         run: |
-          git clone --depth 1 https://github.com/Atituiset/${{ matrix.repo }}.git ~/$REPO
-        env:
-          REPO: ${{ matrix.repo }}
+          pip install -q meson ninja
+          sudo apt-get update -q && sudo apt-get install -q -y \
+            autoconf automake libtool pkg-config bison flex libssl-dev
+
       - name: 生成 compile_commands.json + navmap 配置
         run: |
           cd ~/$REPO
           case "$REPO" in
-            freeDiameter) cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=Debug 2>&1 | tail -3 ;;
-            collectd)     cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCMAKE_BUILD_TYPE=Debug 2>&1 | tail -3 ;;
-            curl)        cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON -DCURL_DISABLE_TESTS=ON 2>&1 | tail -3 ;;
-            open5gs)     meson setup build 2>&1 | tail -3 || cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON 2>&1 | tail -3 ;;
-            *)           cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON 2>&1 | tail -3 ;;
+            open5gs)
+              # meson configure 即产出 compdb（无需 build）
+              meson setup build 2>&1 | tail -3
+              ;;
+            collectd)
+              # autotools：configure 后用 make -n 抓不到 compdb，
+              # 用 build-aux 的 compile_commands 生成器不可行 →
+              # 退路：bear 包 make。装 bear。
+              sudo apt-get install -q -y bear
+              ./configure 2>&1 | tail -3
+              bear -- make -j"$(nproc)" 2>&1 | tail -3
+              ;;
+            *)
+              cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON 2>&1 | tail -3
+              ;;
           esac
-          if [ -f build/compile_commands.json ]; then COMPDB=build/compile_commands.json; else find . -maxdepth 3 -name compile_commands.json | head -1; fi
           python3 -c "
-          import json, glob
-          cand = glob.glob('build*/compile_commands.json') + glob.glob('*/compile_commands.json')
+          import json, glob, os
+          cand = sorted(set(
+              glob.glob('build*/compile_commands.json')
+              + glob.glob('*/compile_commands.json')
+              + [p for p in ['compile_commands.json', 'build/compile_commands.json'] if os.path.isfile(p)]))
           assert cand, 'no compile_commands.json generated'
           raw = json.load(open(cand[0]))
           print('compdb entries:', len(raw))
+          assert len(raw) > 10, 'compdb 太小'
           open('/tmp/COMPDB', 'w').write(cand[0])
           "
       - name: navmap extract（真实 API 名单）
