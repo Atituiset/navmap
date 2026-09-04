@@ -233,8 +233,9 @@ class TUExtractor:
             return ""
         out: list[str] = []
         for i in range(loc.line - 1, min(len(lines), loc.line + 400)):
+            stripped = lines[i].rstrip()
             out.append(lines[i])
-            if lines[i].rstrip().endswith("};"):
+            if stripped.endswith("};") or stripped.endswith(");"):
                 break
         return "\n".join(out)
 

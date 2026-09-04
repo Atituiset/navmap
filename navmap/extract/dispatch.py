@@ -252,55 +252,99 @@ class DispatchExtractor(TUExtractor):
     @classmethod
     def _msg_id_from_var_text(cls, var_text: str, entry_idx: int,
                               handler: str | None) -> str:
-        """extent 全塌缩时的最终兜底：整表 VarDecl 源码文本中，收集
-        括号深度感知的嵌套宏调用（MKENT 形态），第 entry_idx 个的首实参
-        即 msg_id（u-boot blkmap_subcmds 实测形态：每个表项都是
-        U_BOOT_SUBCMD_MKENT(name, maxargs, rep, handler) 宏调用，首实参
-        经 #name 字符串化为子命令名）。"""
-        calls: list[str] = []  # 每个 MKENT 调用的首实参
-        i, n = 0, len(var_text)
-        while i < n:
-            m = cls._CALL_ARG_RE.search(var_text, i)
-            if not m:
-                break
-            start = m.end()  # 实参区起点
+        """extent 全塌缩时的最终兜底：在整表声明源码文本里按深度优先收集
+        叶子层宏调用（无嵌套调用的 IDENT(args)），取第 entry_idx 个的
+        首实参为 msg_id。
+
+        u-boot 实测形态（U_BOOT_CMD_WITH_SUBCMDS 生成的 blkmap_subcmds）：
+        表项元素 extent 全部塌缩到宏调用首行且读为空；声明文本里的叶子
+        调用 = [START(x), MKENT(name, ...)×N, END]，滤掉 0/1 实参的
+        结构宏后恰与表项一一对应。"""
+        if not var_text:
+            return ""
+        leaves: list[str] = []
+
+        def _scan(seg: str, is_top: bool) -> None:
+            pos = 0
+            while True:
+                m = cls._CALL_ARG_RE.search(seg, pos)
+                if not m:
+                    return
+                start = m.end()
+                depth = 1
+                j = start
+                n = len(seg)
+                while j < n and depth > 0:
+                    c = seg[j]
+                    if c == "(":
+                        depth += 1
+                    elif c == ")":
+                        depth -= 1
+                    j += 1
+                if depth != 0:  # 未闭合（截断文本），放弃剩余
+                    return
+                args_text = seg[start:j - 1]
+                inner_m = cls._CALL_ARG_RE.search(args_text)
+                if inner_m:
+                    _scan(args_text, False)  # 有嵌套 → 下钻
+                elif not is_top:
+                    parts = cls._split_args(args_text)
+                    if parts is not None:
+                        leaves.append(parts)
+                pos = j
+
+        # 顶层调用本身（= 整个声明宏）不下钻收集，只递归它的实参区
+        m = cls._CALL_ARG_RE.match(var_text.strip())
+        if m and var_text.strip().endswith(")"):
             depth = 1
-            j = start
-            while j < n and depth > 0:
+            j = m.end()
+            while j < len(var_text) and depth > 0:
                 c = var_text[j]
                 if c == "(":
                     depth += 1
                 elif c == ")":
                     depth -= 1
                 j += 1
-            if depth == 0:  # 完整闭合的调用
-                args_text = var_text[start:j - 1]
-                # 跳过外层包裹（= IDENT(...) 直接是 var_text 全文那种）与
-                # 非表项形态（首实参为空/含分号的语句宏）
-                first_arg = cls._split_args(args_text)
-                if first_arg is not None:
-                    calls.append(first_arg)
-            i = j  # 从闭合处继续扫描（嵌套调用天然跳过）
-        if 0 <= entry_idx < len(calls):
-            arg = calls[entry_idx]
+            if depth == 0:
+                _scan(var_text[m.end():j - 1], False)
+        else:
+            _scan(var_text, True)
+
+        # 结构性宏（0/1 实参）滤除后须与表项数对齐才能按序号配对
+        if entry_idx < len(leaves):
+            arg = leaves[entry_idx]
             if handler is None or arg != handler:
                 return arg.strip().strip('"')
         return ""
 
     @staticmethod
     def _split_args(args_text: str) -> str | None:
-        """顶层逗号切分取首实参；含语句体（{} 或 ;）的调用不算表项。"""
+        """顶层逗号切分；要求 ≥2 个实参（表项宏至少带 name + handler，
+        滤掉 U_BOOT_SUBCMD_START(x) 这类 1 实参结构宏）、非语句体。"""
         if "{" in args_text or ";" in args_text:
             return None
         depth = 0
+        first: str | None = None
+        nargs = 0
+        seg_start = 0
         for k, c in enumerate(args_text):
             if c in "([{":
                 depth += 1
             elif c in ")]}":
                 depth -= 1
             elif c == "," and depth == 0:
-                return args_text[:k].strip()
-        return args_text.strip() or None
+                if nargs == 0:
+                    first = args_text[seg_start:k].strip()
+                nargs += 1
+                seg_start = k + 1
+        tail = args_text[seg_start:].strip()
+        if tail:
+            if nargs == 0:
+                first = tail
+            nargs += 1
+        if nargs < 2 or not first:
+            return None
+        return first
 
     @staticmethod
     def _norm_msg_id(text: str) -> str:
