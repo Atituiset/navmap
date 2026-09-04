@@ -26,7 +26,9 @@ typedef struct {
     ModDesc mod;   /* &m.mod.member 嵌套形态 */
 } ModWrap;
 
-static const ModDesc g_modDesc = {
+/* pjsip 实际形态：mod_evsub 非 const。const + 全常量初始化在 libclang 20
+ * 下不生成 init cursor（已知限制，见 README）。 */
+static ModDesc g_modDesc = {
     .name = "ims-mod",
     .on_rx_request = sess_handle_invite,
     .on_rx_response = sess_handle_bye,

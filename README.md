@@ -155,6 +155,12 @@ incdec / addr 保守记写 / 其余为读），写者全量列出、读者按
 
 ## 已知限制
 
+- **libclang 20 对 `static const` 全常量初始化的 VarDecl 不生成初始化器
+  cursor**（2026-09-04 CI 诊断实测：`static const` 且成员全为函数地址/
+  NULL/常量时 children 只有 TYPE_REF）——此类"完全常量折叠"的结构体注册
+  形态 AST 路径物理不可提取，靠同文件可变形态覆盖（pjsip mod 实际非
+  const；curl Curl_protocol 走 opsstruct 路径不受影响）；
+
 - `clang_Cursor_Evaluate` 仅对白名单表达式 kind 求值（INIT_LIST_EXPR 等
   聚合初始化会 segfault libclang，见 `navmap/clangeval.py` 注释与回归测试）；
 - 名单扩充为半自动：`suggest-apis`/`suggest-vars` 出候选清单，人工确认后
