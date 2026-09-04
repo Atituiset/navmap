@@ -179,7 +179,7 @@ class DispatchExtractor(TUExtractor):
 
         msg_id, msg_id_value = "", None
         if scalars:
-            msg_id = self._extent_text(scalars[0])
+            msg_id = self._norm_msg_id(self._extent_text(scalars[0]))
             msg_id_value = self._eval(scalars[0])
         if not msg_id:
             # X-Macro 场景：子节点 extent 塌缩（实参 token 无独立 range），
@@ -190,12 +190,8 @@ class DispatchExtractor(TUExtractor):
             #  2. 展开形态 {.name = "info", .cmd = fn} / { "info", ... }
             #     → 取第一个字符串字面量或非 handler 标识符。
             text = self._extent_text(entry_cur)
-            mcall = re.match(r"\s*([A-Za-z_]\w*)\s*\((.*)\)\s*$", text, re.DOTALL)
-            if mcall:
-                first_arg = mcall.group(2).split(",")[0].strip().strip('"')
-                if first_arg and first_arg != handler:
-                    msg_id = first_arg
-            if not msg_id:
+            msg_id = self._norm_msg_id(text)
+            if msg_id == text:  # 不是宏调用形态
                 m = re.search(r'"([^"]+)"', text)
                 if m:
                     msg_id = m.group(1)
@@ -217,6 +213,20 @@ class DispatchExtractor(TUExtractor):
         )
 
     # ---------------- 求值 ----------------
+
+    @staticmethod
+    def _norm_msg_id(text: str) -> str:
+        """宏调用形态的标量拼写归一：CMD_MKENT(a, b) → a（剥引号）。
+
+        u-boot U_BOOT_SUBCMD_MKENT(info, 2, 1, fn) 展开后的首字段
+        extent 覆盖整个宏调用，取首实参才是真实 msg_id。
+        """
+        m = re.match(r"([A-Za-z_]\w*)\s*\((.*)\)$", text.strip(), re.DOTALL)
+        if m and m.group(2):
+            first_arg = m.group(2).split(",")[0].strip().strip('"')
+            if first_arg:
+                return first_arg
+        return text
 
     def _eval(self, cursor) -> str | None:
         """展开值（可选，供调试）：ctypes 直调 clang_Cursor_Evaluate
