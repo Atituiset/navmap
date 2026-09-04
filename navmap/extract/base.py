@@ -219,8 +219,9 @@ class TUExtractor:
     def _iter_fnptr_inits(self, record_decl, init):
         """结构体初始化器 → 逐函数指针成员产出 (成员名, 值 cursor)。
 
-        指定初始化器按设计器成员名配对；按位初始化按声明顺序对齐。
-        与 opsstruct/registry 的消费逻辑共用（M6 结构体注册形态）。"""
+        指定初始化器按设计器成员名配对；按位初始化按声明顺序对齐——
+        每个初始化值消费恰好一个成员槽位（非 fnptr 成员的值推进槽位，
+        不产出），这是按位语义的关键。"""
         ci = self._cindex
         all_fields = [f.spelling for f in record_decl.type.get_fields()]
         fnptr_fields = set(self._funcptr_field_names(record_decl))
@@ -239,8 +240,7 @@ class TUExtractor:
                     continue  # 未知设计器（嵌套聚合）跳过
                 name, pos = designator, all_fields.index(designator) + 1
             else:
-                while pos < len(all_fields) and all_fields[pos] not in fnptr_fields:
-                    pos += 1
+                # 按位：本值对齐 all_fields[pos]（可能还压着嵌套聚合槽位）
                 if pos >= len(all_fields):
                     break
                 name = all_fields[pos]

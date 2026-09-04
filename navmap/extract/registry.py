@@ -201,7 +201,6 @@ class RegistryExtractor(TUExtractor):
         返回 (内层 record decl, member 的 INIT_LIST_EXPR) 或 None。"""
         ci = self._cindex
         all_fields = [f.spelling for f in record_decl.type.get_fields()]
-        fnptr_fields = set(self._funcptr_field_names(record_decl))
         pos = 0
         for raw in init.get_children():
             designator = None
@@ -216,8 +215,7 @@ class RegistryExtractor(TUExtractor):
                 pos = (all_fields.index(designator) + 1
                        if designator in all_fields else pos)
             else:
-                while pos < len(all_fields) and all_fields[pos] not in fnptr_fields:
-                    pos += 1
+                # 按位：每个值消费恰好一个成员槽位（与 _iter_fnptr_inits 同语义）
                 name = all_fields[pos] if pos < len(all_fields) else None
                 pos += 1
             if name == member:
