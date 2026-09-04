@@ -53,6 +53,12 @@ jobs:
       - name: 克隆 u-boot（pin v2026.07）
         run: git clone --depth 1 --branch v2026.07 https://github.com/u-boot/u-boot.git ~/u-boot
 
+      - name: 安装 u-boot 构建依赖
+        run: |
+          sudo apt-get update -q && sudo apt-get install -q -y \
+            libgnutls28-dev libssl-dev libncurses-dev \
+            bison flex swig libpython3-dev bc
+
       - name: 构建 sandbox defconfig 生成 compile_commands.json
         env:
           # NO_PYTHON=1：官方开关，跳过 pylibfdt（swig）构建——它对非系统
