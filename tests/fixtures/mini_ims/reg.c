@@ -29,7 +29,7 @@ typedef struct {
 /* pjsip 实际形态：mod_evsub 非 const、按位初始化（成员顺序 = 声明顺序）。
  * 注：libclang 20 对"全指定初始化器 + 全 fnptr 成员"的这种组合不生成
  * init cursor（CI 实测），按位形态稳定且更贴近 pjsip 真实代码。 */
-static ModDesc g_modDesc = {
+static ModDesc mod_desc = {
     "ims-mod",
     sess_handle_invite,
     sess_handle_bye,
@@ -50,6 +50,6 @@ void WrapReg(const ModWrap *wrap);
 
 void reg_struct_init(void)
 {
-    ModReg(&g_modDesc);
+    ModReg(&mod_desc);
     WrapReg(&g_modWrap.mod);
 }
