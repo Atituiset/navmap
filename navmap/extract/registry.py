@@ -162,11 +162,7 @@ class RegistryExtractor(TUExtractor):
             # fnptr 不在顶层：&mod.member（member 是嵌套结构体）时下钻
             if member_name is None:
                 return None
-        init = None
-        for child in target.get_children():
-            if child.kind == ci.CursorKind.INIT_LIST_EXPR:
-                init = child
-                break
+        init = self._var_init_list(target)
         if init is None:
             return None  # 结构体无初始化器（运行期填）→ 无法静态提取
 

@@ -67,11 +67,7 @@ class OpsStructExtractor(TUExtractor):
         if len(fnptr_fields) < self.MIN_FUNCPTRS:
             return None
 
-        init = None
-        for child in var.get_children():
-            if child.kind == ci.CursorKind.INIT_LIST_EXPR:
-                init = child
-                break
+        init = self._var_init_list(var)
         if init is None:
             return None  # 声明无初始化（extern/前置）→ 运行期注册形态，归 registry
 

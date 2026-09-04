@@ -181,6 +181,28 @@ class TUExtractor:
 
     # ---------------- 结构体初始化器 fnptr 成员展开（registry/opsstruct 共用） ----------------
 
+    def _var_init_list(self, var):
+        """VarDecl 的 INIT_LIST_EXPR 初始化器。
+
+        libclang 对 static const 等形态，初始化器可能包在 UNEXPOSED_EXPR
+        里而非裸 INIT_LIST_EXPR 子节点（2026-09-04 CI 诊断实测）——
+        先直接找，找不到再剥一层包装。找不到返回 None（无初始化器/
+        运行期填）。"""
+        ci = self._cindex
+        init = None
+        for child in var.get_children():
+            if child.kind == ci.CursorKind.INIT_LIST_EXPR:
+                init = child
+                break
+        if init is not None:
+            return init
+        for child in var.get_children():
+            if child.kind == ci.CursorKind.UNEXPOSED_EXPR:
+                for sub in child.get_children():
+                    if sub.kind == ci.CursorKind.INIT_LIST_EXPR:
+                        return sub
+        return None
+
     def _funcptr_field_names(self, record_decl) -> list[str]:
         """结构体里函数指针成员的名字（按声明顺序）。"""
         ci = self._cindex
