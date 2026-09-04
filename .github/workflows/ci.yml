@@ -1,9 +1,9 @@
 # navmap CI：单测 + 真实仓回归（u-boot / AetherStack），全部在 GitHub CI 上执行
 #
 # 拓扑：
-#   unit            —— fixture 单测（43+ 用例，验证提取器行为不回归）
-#   uboot-regress   —— u-boot v2026.07 全量提取回归：候选数/表数/表项数/质检断言
-#   aether-regress  —— AetherStack master 提取回归：产物非空 + 构建目录不进候选
+#   unit            —— fixture 单测（50+ 用例，验证提取器行为不回归）
+#   uboot-regress   —— u-boot v2026.07 全量提取回归：候选数/表数/表项数/USR 完整性断言
+#   aether-regress  —— AetherStack master 提取回归：构建目录不进候选 + suggest 冒烟
 #
 # 触发：push 到 main / 手动 / 每日低峰。单测不过不跑真实仓（needs 串联）。
 
@@ -39,6 +39,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: unit
     timeout-minutes: 45
+    env:
+      NAVMAP: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -49,15 +51,18 @@ jobs:
         run: python3 -m venv .venv && .venv/bin/pip install -q -e '.'
 
       - name: 克隆 u-boot（pin v2026.07）
-        run: |
-          git clone --depth 1 --branch v2026.07 https://github.com/u-boot/u-boot.git ~/u-boot
+        run: git clone --depth 1 --branch v2026.07 https://github.com/u-boot/u-boot.git ~/u-boot
 
       - name: 构建 sandbox defconfig 生成 compile_commands.json
+        env:
+          # NO_PYTHON=1：官方开关，跳过 pylibfdt（swig）构建——它对非系统
+          # python 头文件敏感，与 setup-python 注入的 PATH/PYTHON* 冲突
+          NO_PYTHON: "1"
         run: |
           cd ~/u-boot
           make sandbox_defconfig
-          make -j"$(nproc)" 2>&1 | tail -5   # 完整构建（sandbox 是原生可执行，无需交叉）
-          python3 scripts/gen_compile_commands.py -d . -o compile_commands.json --log_level INFO
+          make -j"$(nproc)" 2>&1 | tail -30
+          python3 scripts/gen_compile_commands.py -d . -o compile_commands.json
           python3 - <<'EOF'
           import json
           raw = json.load(open('compile_commands.json'))
@@ -69,10 +74,10 @@ jobs:
         run: |
           cd ~/u-boot
           BASELINE=$(git rev-parse HEAD)
-          ~/navmap/.venv/bin/navmap extract \
+          "$NAVMAP/.venv/bin/navmap" extract \
             --src "$HOME/u-boot" --compdb compile_commands.json \
             --baseline "$BASELINE" --subsystem uboot --out /tmp/navmap-uboot/ \
-            --config ~/navmap/config/navmap.toml 2>&1 | tee /tmp/extract.log
+            --config "$NAVMAP/config/navmap.toml" 2>&1 | tee /tmp/extract.log
 
       - name: 回归断言（表数/表项数/USR 完整性/候选量级）
         run: |
@@ -100,24 +105,20 @@ jobs:
           assert miss_id == 0, f"{miss_id} 个表项 msg_id 缺失"
           EOF
 
-      - name: navmap report 质检（ERROR 必须为 0）
+      - name: navmap report 质检（打印供复核）
         run: |
-          ~/navmap/.venv/bin/navmap report --out /tmp/navmap-uboot/ --src ~/u-boot \
+          "$NAVMAP/.venv/bin/navmap" report --out /tmp/navmap-uboot/ --src ~/u-boot \
             > /tmp/navmap-uboot/quality.md || true
-          grep -E "^- ERROR " /tmp/navmap-uboot/quality.md || true
-          ERR=$(grep -oP 'ERROR \K[0-9]+' /tmp/navmap-uboot/quality.md | head -1)
-          echo "ERROR count: ${ERR:-0}"
-          # 候选文件解析失败的 ERROR 属于 compdb 覆盖面问题（INFO 级可接受），
-          # 但提取器自身的 USR 缺失类 ERROR 必须为 0 —— 由上一断言保证。
-          # 这里只打印报告供人工复核，不作为硬门槛（解析失败随 u-boot 版本漂移）。
+          grep -E "^- ERROR " /tmp/navmap-uboot/quality.md | head -20 || true
+          grep -E "^- ERROR [0-9]+ / " /tmp/navmap-uboot/quality.md || true
 
       - name: refresh 增量短路回归
         run: |
           cd ~/u-boot
-          ~/navmap/.venv/bin/navmap refresh \
+          "$NAVMAP/.venv/bin/navmap" refresh \
             --src "$HOME/u-boot" --compdb compile_commands.json \
             --subsystem uboot --out /tmp/navmap-uboot/ \
-            --config ~/navmap/config/navmap.toml
+            --config "$NAVMAP/config/navmap.toml"
           # 未 commit 任何变更 → 必须秒级短路且产物不动
           python3 -c "
           import json
@@ -139,6 +140,8 @@ jobs:
     runs-on: ubuntu-latest
     needs: unit
     timeout-minutes: 30
+    env:
+      NAVMAP: ${{ github.workspace }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -153,22 +156,21 @@ jobs:
       - name: cmake 配置生成 compile_commands.json
         run: |
           cd ~/aether
-          cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ 2>/dev/null || \
           cmake -S . -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
           python3 -c "
           import json
           raw = json.load(open('build/compile_commands.json'))
           print(f'compdb entries: {len(raw)}')
+          assert len(raw) > 30, 'compdb 太小，cmake 配置可能失败'
           "
 
       - name: navmap extract + 构建目录污染回归
         run: |
           BASELINE=$(git -C ~/aether rev-parse HEAD)
-          ~/navmap/.venv/bin/navmap extract \
+          "$NAVMAP/.venv/bin/navmap" extract \
             --src "$HOME/aether" --compdb ~/aether/build/compile_commands.json \
             --baseline "$BASELINE" --subsystem stack --out /tmp/navmap-aether/ \
-            --config ~/navmap/config/navmap.toml 2>&1 | tee /tmp/extract-aether.log
+            --config "$NAVMAP/config/navmap.toml" 2>&1 | tee /tmp/extract-aether.log
 
           python3 - <<'EOF'
           import json
@@ -189,10 +191,10 @@ jobs:
           EOF
       - name: suggest-apis 冒烟（C++ 注册式发现）
         run: |
-          ~/navmap/.venv/bin/navmap suggest-apis \
+          "$NAVMAP/.venv/bin/navmap" suggest-apis \
             --src "$HOME/aether" --compdb ~/aether/build/compile_commands.json \
             --threshold 3 --out /tmp/navmap-aether/suggest-apis.md \
-            --config ~/navmap/config/navmap.toml | head -30 || true
+            --config "$NAVMAP/config/navmap.toml" | head -30 || true
       - name: 上传产物
         if: always()
         uses: actions/upload-artifact@v4
