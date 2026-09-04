@@ -85,6 +85,35 @@ jobs:
             --baseline "$BASELINE" --subsystem uboot --out /tmp/navmap-uboot/ \
             --config "$NAVMAP/config/navmap.toml" 2>&1 | tee /tmp/extract.log
 
+      - name: blkmap 诊断（宏调用表项 msg_id 兜底路径可观测性）
+        run: |
+          cat > /tmp/diag.py <<'EOF'
+          import sys
+          sys.path.insert(0, "/home/runner/work/navmap/navmap")
+          from navmap import clangenv
+          from navmap.compdb import CompilationDB
+          from navmap.extract.dispatch import DispatchExtractor
+          clangenv.setup()
+          ex = DispatchExtractor(CompilationDB("/home/runner/u-boot/compile_commands.json"),
+                                 src_root="/home/runner/u-boot")
+          import clang.cindex as ci
+          tu, fatal = ex._parse("/home/runner/u-boot/cmd/blkmap.c")
+          for cur in ex._walk_globals(tu.cursor):
+              if cur.spelling == "blkmap_subcmds":
+                  print("== blkmap_subcmds ==", "type:", cur.type.kind)
+                  for child in cur.get_children():
+                      if child.kind == ci.CursorKind.INIT_LIST_EXPR:
+                          for el in child.get_children():
+                              print("element kind:", el.kind, "extent:",
+                                    (el.extent.start.file.name if el.extent.start.file else None),
+                                    el.extent.start.line, el.extent.end.line)
+                              print("  entry text:", repr(ex._extent_text(el))[:200])
+                              for sub in el.get_children():
+                                  print("   sub:", sub.kind, "spelling:", sub.spelling,
+                                        "extent text:", repr(ex._extent_text(sub))[:120])
+          EOF
+          python3 /tmp/diag.py 2>&1 | head -60 || true
+
       - name: 回归断言（表数/表项数/USR 完整性/候选量级）
         run: |
           python3 - <<'EOF'
@@ -106,9 +135,17 @@ jobs:
                          if not e.get('handler_loc'))
           assert miss_loc == 0, f"{miss_loc} 个表项 handler 位置缺失"
           # X-Macro / 宏表：msg_id 必须是宏拼写（非空）
-          miss_id = sum(1 for t in tables for e in t['entries']
-                        if not e.get('msg_id'))
-          assert miss_id == 0, f"{miss_id} 个表项 msg_id 缺失"
+          miss_id = [e for t in tables for e in t['entries'] if not e.get('msg_id')]
+          if miss_id:
+              for e in miss_id[:5]:
+                  loc_t = None
+                  for t in tables:
+                      if e in t['entries']:
+                          loc_t = t
+                          break
+                  print(f"msg_id 缺失示例: handler={e['handler']}, "
+                        f"表={loc_t['name']}({loc_t['file']}), cond={e.get('cond')}")
+          assert not miss_id, f"{len(miss_id)} 个表项 msg_id 缺失"
           EOF
 
       - name: navmap report 质检（打印供复核）
